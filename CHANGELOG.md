@@ -45,12 +45,29 @@ Calibration lands: confidences become numbers you can threshold on.
 
 - `Decider` constructor arguments default to `None` and resolve from `pd.toml`/env,
   then the built-in defaults. Explicit arguments still win.
+- The KV budget is clamped so weights plus the broadcast stay under 65% of physical
+  RAM. Exceeding it does not raise — macOS swaps and calls get several times slower
+  (measured: a 48-row invoice case went from ~11 minutes to 13+ minutes stalled with
+  15 GB of swap).
+- `mlx` is imported lazily, so schema, calibration, config and lint work on a machine
+  without it.
+- The version is read from `parallel_decisions.__version__`; the wheel previously
+  built as 0.1.0 while the package reported 0.2.0.
 - `FieldValue` gained `distribution` (every allowed answer, not just the runner-up),
   `raw_probability` and `calibrated`.
 - `pd validate` now reports multi-select fields and per-row collisions.
 
 ### Fixed
 
+- **Hybrid architectures work.** The KV broadcast only repeated `keys`/`values`, so
+  models that keep a convolutional state on linear-attention layers (Qwen3.5) failed
+  with a shape error. Every per-sequence array in the cache is now broadcast, read
+  from instance storage only — `KVCache.state` is a *view* for serialisation, and
+  writing through it silently truncated the cache.
+- The per-token cache measurement sampled prompts where `mlx-lm`'s 256-token
+  preallocation makes every size identical, so it reported no growth. It now spans
+  512–3072 tokens and reports the constant per-row state separately (49 MB for
+  Qwen3.5-4B), which chunk sizing counts too.
 - Adaptive ECE binning was order-dependent when many answers shared a confidence;
   bin edges are now empirical quantiles, so the number no longer depends on shuffling.
 - Multi-class temperature scaling is a true renormalisation over all classes (the
