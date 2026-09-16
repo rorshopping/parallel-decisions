@@ -316,13 +316,12 @@ Two costs dominate:
 
 - **Probabilities are softmax over allowed answers**, not calibrated frequencies.
   Treat them as relative confidence until you fit a calibrator on your own labelled
-  data. On the default model, 28 of 40 wrong answers carried ≥0.90 confidence before
-  calibration, and the raw confidence ranks better than it calibrates (AUROC 0.74
-  overall: 0.91 on choice fields, 0.66 on yes/no). Filtering to the most confident
-  10% of answers cut the error rate from 35% to 17% on the data we measured.
-  See [`CALIBRATION.md`](CALIBRATION.md) for the measured tables and, importantly,
-  the sample sizes — **calibration is not a substitute for labelled domain data, and
-  on ~100 rows no post-hoc method beat raw softmax out of sample.**
+  data. Measured on the default model: raw confidence ranks correctness well but is
+  overconfident in level (AUROC 0.747; ECE 0.205, 14 answers at confidence 1.0000 of
+  which 2 were wrong), and post-hoc calibration took ECE to 0.150 out of sample on
+  188 labelled decisions. Acting on the most confident 25% carried a 6.4% error rate;
+  the most confident 50%, 12.8%. See [`CALIBRATION.md`](CALIBRATION.md) — including
+  why a "1% error rate" threshold was **not** reachable on that data.
 - **The model has a listing-order preference.** It picks the first listed option in
   82% of choice fields, and is right 96.7% of the time when the correct option is
   first versus 24.5% when it is not. For choice fields, order your options by what

@@ -116,44 +116,95 @@ of sample** — "do nothing" is an explicit option.
 - It does **not** transfer across domains, and often not across question types: a
   calibrator fitted on all field types mixed together can look fine overall while
   being wrong inside a slice, because each slice has its own base rate (`pd calibrate`
-  prints the per-slice table for exactly this reason).
-- It needs data. On ~100 labelled noul rows from the published eval, **no method beat
-  raw softmax out of sample** and `fit_calibration` selected `identity`. That is the
-  honest outcome at that sample size, not a failure of the methods: 100 records cannot
-  pin a monotone curve at the 0.9+ end where nearly all the mass sits.
+  prints the per-slice table for exactly this reason). Counter-intuitively, at small
+  n a *mixture*-fitted map transfers better than a slice-fitted one — the mixture has
+  more data — so slice the *evaluation*, not necessarily the fit.
+- It needs data. On ~126 labelled yes/no rows from the published eval, **no method
+  beat raw softmax out of sample** and `fit_calibration` selected `identity`. That is
+  the honest outcome at that sample size, not a failure of the methods: 126 records
+  cannot pin a monotone curve at the 0.9+ end, where nearly all the mass sits.
+  Section 6 has the numbers with their sample sizes.
+
+## 6. What this measured, on 188 labelled decisions
+
+From `evals/results/calibration/qwen2.5-7b.jsonl` (the packaged engine run over the
+public cases, three of four workflows complete). All numbers are out of sample: the
+calibrator is refitted inside the fold loop, so nothing is scored by a map that saw it.
+
+```
+cross-validated comparison (5 folds, selection metric: ece_adaptive)
+method                         mean          std          raw
+isotonic                     0.1506       0.0197       0.2050
+temperature                  0.2100       0.0151       0.2050
+identity                     0.2212       0.0202       0.2050
+platt                        0.2689       0.0167       0.2050
+selected: isotonic (11 points)
+
+reliability (equal-count bins, adaptive)   ECE 0.205 -> 0.060
+reliability by slice, with that map applied:
+        type     n     acc   raw ECE   cal ECE  mean conf  mean acc
+      choice    51   66.7%     0.271     0.208      0.807     0.667
+        noul   126   77.0%     0.143     0.085      0.764     0.770
+       score    11   18.2%     0.695     0.470      0.557     0.182
+```
+
+Read that as: calibration helps, by about a third, and ECE stays around 0.15 — five
+times the roadmap's 0.03 target. Three things limit it, all measured:
+
+1. **The confidence of 1.0 is not certainty.** 14 answers carry `probability` exactly
+   1.0000 and 2 of them are wrong. The isotonic map squashes that group to ~0.99 and
+   the errors remain, so no threshold derived from the top probability can reach a 1%
+   error rate on this data.
+2. **Sample size, not method choice.** Fitting on the 126 `noul` records alone, no
+   method beats doing nothing (identity 0.181 mean vs isotonic 0.186, and identity's
+   in-sample value is 0.143 — the *estimate* is noisy at this size). The same map
+   fitted on all 188 records and applied to the `noul` slice does reduce its ECE
+   (0.143 → 0.085), so a mixture-fitted map transfers across slices better than a
+   slice-fitted one at small n.
+3. **Accuracy ceilings what calibration can express.** A map can only make the number
+   match the observed error rate. The `score` slice is right 18% of the time with mean
+   confidence 0.557; isotonic moves it to 0.470, and the honest conclusion there is
+   "this field type is not reliable enough to act on", not "calibrate harder".
 
 We also checked whether a different confidence signal ranks better than the top
-probability (`evals/confidence_features.py`): margin over the runner-up, log-odds, and
-normalised entropy all land within 0.01 AUROC of the top probability or below it
-(0.739 / 0.735 / 0.715 vs 0.743 overall). The top probability is the best of these
-features, so the calibrator fits on it.
+probability (`evals/confidence_features.py`, 145 records): margin over the runner-up,
+log-odds and normalised entropy all land within 0.01 AUROC of the top probability or
+below it (0.739 / 0.735 / 0.715 vs 0.743), so the calibrator fits on the top
+probability. The raw confidence does rank well — AUROC 0.747 overall, 0.91 on choice
+fields — so it is a usable ranking signal and always was.
 
-## 6. Using it as a routing signal
+## 7. Using it as a routing signal
 
 `examples/routing.py` derives the policy from data rather than guessing, and evaluates
-it **out of sample** (the calibrator is refit inside the fold loop, so no record is
-scored by a calibrator that saw it):
+it out of sample. On the 188 records above, at the roadmap's 1% error budget:
 
 ```
-error budget -> threshold, coverage, act-bucket error
-  budget  threshold  acted on   share  errors  error rate  95% upper
-   0.00%     0.8464        11   11.3%       0       0.00%     25.88%
-   1.00%     0.8464        11   11.3%       0       0.00%     25.88%
-   5.00%     0.8464        11   11.3%       0       0.00%     25.88%
+  error budget -> threshold, coverage, act-bucket error
+   budget  threshold  acted on   share  errors  error rate  95% upper
+    1.00%     1.0000        14    7.4%       2      14.29%     39.94%  (budget unreachable)
 
-POLICY (budget 1.00%):
-  act     conf >= 0.8464   11/97 = 11.3% of work, error rate 0.00% (95% upper 25.88%)
-  review  0.5013 <= conf < 0.8464   76 decisions
-  refuse  conf < 0.5013   10 decisions
+  POLICY (budget 1.00%):
+    act     conf >= 1.0000   14/188 = 7.4% of work, error rate 14.29% (95% upper 39.94%) — budget NOT met
+    review  0.4999 <= conf < 1.0000   164 decisions
+    refuse  conf < 0.4999   10 decisions
 ```
 
-Read the **95% upper bound**, not the point estimate: zero errors in 11 decisions is
-consistent with a true error rate anywhere up to 26%. A "0.00% error rate" on 11
-samples is not evidence of a 0% error rate. The act bucket will only be trustworthy
-with a few hundred labelled rows from the domain it runs in — that is the single
-thing standing between this and a usable automation threshold.
+**The 1% budget is unreachable on this data, and the demo says so.** The most useful
+rows are the coverage ones: acting on the most confident 25% carries a 6.4% error rate
+(95% upper 17.2%), and the most confident 50% carries 12.8%. That is a usable
+review-prioritisation signal and not a usable automation threshold.
 
-## 7. Collecting the data
+Two rules for reading any of these tables:
+
+- **Read the interval, not the point estimate.** Zero errors in 11 decisions is
+  consistent with a true error rate up to 26%. A green "0.00%" row on a small sample
+  is not evidence of a 0% error rate, and the demo prints the upper bound for exactly
+  this reason.
+- **A threshold is only as good as the sample it came from.** These numbers come from
+  public eval cases, not from the domain anyone would deploy on. Treat them as a
+  template and a set of caveats, not a policy.
+
+## 8. Collecting the data
 
 The preferred source is your own domain, because calibration does not transfer:
 
