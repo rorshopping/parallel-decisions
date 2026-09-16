@@ -17,6 +17,7 @@ module must never break `import parallel_decisions` on a machine without it.
 from __future__ import annotations
 
 import copy
+import logging
 import time
 from typing import Any, Sequence
 
@@ -24,6 +25,160 @@ from .prompts import build_prompt, build_prompt_parts
 from .schema import CompiledField
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+
+
+class TorchCudaGraphCache:
+    """Bounded, runtime-local suffix graphs; a shape's first use stays eager.
+
+    Prefill is deliberately NOT captured. In transformers 5.17 DynamicLayer.update
+    replaces keys/values with torch.cat, while StaticLayer.update uses index_copy_
+    and an in-place tensor length counter. Use the latter with stable staged inputs,
+    resetting every counter and broadcasting fresh prefix KV *inside* each replay.
+    Qwen2 accepts a prebuilt mask mapping, avoiding HF's data-dependent mask setup.
+    No torch.compile/Triton dependency is needed (including on Windows).
+    """
+
+    def __init__(self, runtime, *, max_graphs: int = 4, bucket_size: int = 128):
+        self.runtime = runtime
+        self.max_graphs = max_graphs
+        self.bucket_size = bucket_size
+        self.entries: dict[tuple[int, int, int], Any] = {}
+        self.seen: set[tuple[int, int, int]] = set()
+        self.disabled = False
+        self.capture_ms = 0.0  # cumulative setup + warmup + capture, not replay
+        self.replays = 0
+
+    def run(self, cache, rows, pad_id):
+        rt = self.runtime
+        if self.disabled:
+            return rt._batched_pass_eager(cache, rows, pad_id)
+        try:
+            prefix_len = cache.get_seq_length()
+            suffix_len = max(map(len, rows))
+            bucket = ((prefix_len + self.bucket_size - 1) // self.bucket_size) * self.bucket_size
+            key = (len(rows), suffix_len, bucket)
+            entry = self.entries.get(key)
+            if entry is None:
+                if key not in self.seen:
+                    if len(self.seen) >= 128:
+                        self.seen.clear()
+                    self.seen.add(key)
+                    return rt._batched_pass_eager(cache, rows, pad_id)
+                # Keep graph-private memory bounded; uncached shapes remain eager.
+                if len(self.entries) >= self.max_graphs:
+                    return rt._batched_pass_eager(cache, rows, pad_id)
+                rt.synchronize()
+                started = time.perf_counter()
+                try:
+                    entry = self._capture(cache, rows, pad_id, key)
+                finally:
+                    rt.synchronize()
+                    self.capture_ms += (time.perf_counter() - started) * 1000
+                self.entries[key] = entry
+            self._stage(entry, cache, rows, pad_id)
+            entry["graph"].replay()
+            self.replays += 1
+            # Callers may retain results across another replay (collision passes).
+            return entry["logits"].clone(), entry["tokens"].clone()
+        except Exception as exc:
+            self.disabled = True
+            self.entries.clear()
+            logging.getLogger(__name__).warning(
+                "CUDA graph fallback: disabling graphs for this runtime (%s: %s)",
+                type(exc).__name__, exc)
+        return rt._batched_pass_eager(cache, rows, pad_id)
+
+    def _stage(self, entry, cache, rows, pad_id):
+        torch = self.runtime.torch
+        length = cache.get_seq_length()
+        entry["length"].fill_(length)
+        width = entry["tokens"].shape[1]
+        entry["tokens"].copy_(torch.tensor(
+            [r + [pad_id] * (width - len(r)) for r in rows],
+            dtype=torch.long, device=self.runtime.device))
+        for source, (keys, values) in zip(cache.layers, entry["prefix"]):
+            keys[..., :length, :].copy_(source.keys)
+            values[..., :length, :].copy_(source.values)
+            # A shorter prompt must not leave old data, including NaNs, in padding.
+            keys[..., length:, :].zero_()
+            values[..., length:, :].zero_()
+
+    def _capture(self, cache, rows, pad_id, key):
+        from transformers.cache_utils import DynamicLayer, StaticCache, StaticLayer
+
+        rt = self.runtime
+        torch = rt.torch
+        config = rt.model.config
+        # Only this architecture/API has been verified. Unknown or sliding/hybrid
+        # caches must not silently produce a full-attention answer instead.
+        if (config.model_type != "qwen2" or rt.model.training
+                or config._attn_implementation not in ("eager", "sdpa")
+                or config.rope_parameters["rope_type"] != "default"
+                or any(type(layer) is not DynamicLayer for layer in cache.layers)):
+            raise ValueError("graphs currently support eval-mode full-attention Qwen2 only")
+        n, suffix_len, bucket = key
+        static = StaticCache(config=config, max_cache_len=bucket + suffix_len)
+        if any(type(layer) is not StaticLayer for layer in static.layers):
+            raise ValueError("sliding/hybrid StaticCache is not graph-supported")
+        if len(static.layers) != len(cache.layers):
+            raise ValueError("incomplete prompt cache")
+        # Refuse oversized shapes before allocating: a conservative bound on KV,
+        # repeated attention KV, logits and activations. This is not a VRAM quota.
+        kv_bytes = sum((l.keys.numel() + l.values.numel()) * l.keys.element_size()
+                       for l in cache.layers) * n * (bucket + suffix_len) / max(1, cache.get_seq_length())
+        logits_bytes = n * suffix_len * config.vocab_size * 4
+        if kv_bytes * (2 + config.num_attention_heads / config.num_key_value_heads) + logits_bytes * 3 > 512 * 1024**2:
+            raise ValueError("graph shape exceeds the 512 MiB estimated working-set limit")
+        entry = {
+            "cache": static,
+            "tokens": torch.empty((n, suffix_len), dtype=torch.long, device=rt.device),
+            "length": torch.zeros((), dtype=torch.long, device=rt.device),
+            "prefix": [],
+        }
+        for source, target in zip(cache.layers, static.layers):
+            target.lazy_initialization(source.keys.expand(n, -1, -1, -1),
+                                       source.values.expand(n, -1, -1, -1))
+            entry["prefix"].append(tuple(torch.zeros(
+                (1, tensor.shape[1], bucket, tensor.shape[-1]),
+                dtype=tensor.dtype, device=tensor.device)
+                for tensor in (source.keys, source.values)))
+        self._stage(entry, cache, rows, pad_id)
+        query = torch.arange(suffix_len, device=rt.device)
+        keys = torch.arange(bucket + suffix_len, device=rt.device)
+        entry["query_indices"] = query
+        entry["key_indices"] = keys
+
+        def forward():
+            for layer, (k, v) in zip(static.layers, entry["prefix"]):
+                layer.keys[..., :bucket, :].copy_(k)
+                layer.values[..., :bucket, :].copy_(v)
+                layer.cumulative_length.copy_(entry["length"])
+            positions = query + entry["length"]
+            allowed = keys[None, :] <= positions[:, None]
+            mask = torch.zeros((suffix_len, bucket + suffix_len),
+                               dtype=rt.dtype, device=rt.device)
+            mask.masked_fill_(~allowed, torch.finfo(rt.dtype).min)
+            return rt.model(
+                entry["tokens"], past_key_values=static,
+                position_ids=positions[None, :],
+                attention_mask={"full_attention": mask[None, None, :, :]},
+                use_cache=True).logits
+
+        # cuBLAS and allocator initialization must happen outside capture and on a
+        # side stream. Keep all static tensors and the output alive with the graph.
+        with torch.cuda.device(rt.device), torch.no_grad():
+            stream = torch.cuda.Stream(device=rt.device)
+            stream.wait_stream(torch.cuda.current_stream(rt.device))
+            with torch.cuda.stream(stream):
+                for _ in range(3):
+                    forward()
+            torch.cuda.current_stream(rt.device).wait_stream(stream)
+            rt.synchronize()
+            graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(graph, stream=stream):
+                entry["logits"] = forward()
+            entry["graph"] = graph
+        return entry
 
 
 class TorchRuntime:
@@ -34,7 +189,8 @@ class TorchRuntime:
     """
 
     def __init__(self, model_id: str | None = None, *, dtype: str | None = None,
-                 device: str | None = None, verbose: bool = False):
+                 device: str | None = None, verbose: bool = False,
+                 cuda_graph: bool = False):
         self.model_id = model_id or DEFAULT_TORCH_MODEL
         self._dtype_pref = dtype
         self._device_pref = device
@@ -44,6 +200,8 @@ class TorchRuntime:
         self.tokenizer = None
         self.device = None
         self.dtype = None
+        self.cuda_graph = cuda_graph
+        self.graph_cache = TorchCudaGraphCache(self)
 
     def _log(self, message: str) -> None:
         if self.verbose:
@@ -153,6 +311,11 @@ class TorchRuntime:
         return new_cache
 
     def batched_pass(self, cache, rows: list[list[int]], pad_id: int):
+        if self.cuda_graph and str(self.device).startswith("cuda"):
+            return self.graph_cache.run(cache, rows, pad_id)
+        return self._batched_pass_eager(cache, rows, pad_id)
+
+    def _batched_pass_eager(self, cache, rows: list[list[int]], pad_id: int):
         """One forward pass over padded suffix/answer rows against a broadcast cache.
 
         The cache holds the prompt prefix; each row appends its own suffix, so the

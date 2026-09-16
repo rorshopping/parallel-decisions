@@ -169,6 +169,7 @@ class Decider:
                  backend: str | None = None,
                  torch_dtype: str | None = None,
                  torch_device: str | None = None,
+                 cuda_graph: bool | None = None,
                  verbose: bool = False):
         cfg = config if isinstance(config, Config) else load_config(config)
         self.config = cfg
@@ -194,6 +195,7 @@ class Decider:
         self.backend = _select_backend(backend)
         self.torch_dtype = torch_dtype
         self.torch_device = torch_device
+        self.cuda_graph = bool(cfg.cuda_graph) if cuda_graph is None else bool(cuda_graph)
 
         self.model_id = model_id or DEFAULT_MODEL
         self.max_fields_per_batch = max(1, int(max_fields_per_batch or DEFAULT_MAX_FIELDS))
@@ -307,7 +309,8 @@ class Decider:
 
         t0 = time.perf_counter()
         self._torch_rt = TorchRuntime(self.model_id, dtype=self.torch_dtype,
-                                      device=self.torch_device, verbose=self.verbose)
+                                      device=self.torch_device, verbose=self.verbose,
+                                      cuda_graph=self.cuda_graph)
         self._torch_rt.load()
         self._model = self._torch_rt.model
         self._tokenizer = self._torch_rt.tokenizer

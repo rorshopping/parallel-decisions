@@ -46,6 +46,7 @@ ENV_NAMES = {
     "backend": "PD_BACKEND",
     "torch_dtype": "PD_TORCH_DTYPE",
     "torch_device": "PD_TORCH_DEVICE",
+    "cuda_graph": "PD_CUDA_GRAPH",
 }
 ENV_CONFIG = "PD_CONFIG"
 BOOL_TRUE = {"1", "true", "yes", "on"}
@@ -70,6 +71,7 @@ class Config:
     backend: str | None = None
     torch_dtype: str | None = None
     torch_device: str | None = None
+    cuda_graph: bool | None = None
     source: str | None = None
 
     def resolved(self) -> dict[str, Any]:
@@ -138,7 +140,7 @@ def _coerce(key: str, value: Any) -> Any:
         return int(value)
     if key in ("memory_budget_gb", "lock_timeout_s"):
         return float(value)
-    if key == "warmup":
+    if key in ("warmup", "cuda_graph"):
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in BOOL_TRUE
