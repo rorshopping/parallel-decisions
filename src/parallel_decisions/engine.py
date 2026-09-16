@@ -895,10 +895,10 @@ def _is_memory_error(exc: BaseException) -> bool:
 
 
 def _clear_mlx_cache() -> None:
-    """Release MLX's cached buffers so the retry has room (best effort)."""
+    """Release MLX's cached buffers so a retry has room (best effort)."""
     try:
-        import mlx.core as mx
-        clear = getattr(mx, "clear_cache", None) or getattr(getattr(mx, "metal", None), "clear_cache", None)
+        clear = getattr(mx, "clear_cache", None) or getattr(
+            getattr(mx, "metal", None), "clear_cache", None)
         if clear is not None:
             clear()
     except Exception:  # pragma: no cover - cache clearing is best effort
