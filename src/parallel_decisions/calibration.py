@@ -39,6 +39,8 @@ METHODS = ("temperature", "platt", "isotonic")
 
 __all__ = [
     "CalibrationError",
+    "filter_records",
+    "slices",
     "CalibrationRecord",
     "Calibrator",
     "CalibrationFit",
@@ -207,6 +209,54 @@ def load_records(data: str | os.PathLike[str] | Iterable[Mapping[str, Any]]) -> 
     if not records:
         raise CalibrationError("no records loaded")
     return records
+
+
+def filter_records(records: Sequence[CalibrationRecord],
+                   *conditions: str) -> list[CalibrationRecord]:
+    """Keep records matching every `key=value` condition.
+
+    Keys are matched against `meta` (which carries `type`, `qid`, `workflow`, `model`
+    when the source file has them), then against the record's own fields. Values
+    compare as strings, with `true`/`false` understood for booleans::
+
+        filter_records(records, "type=noul")        # fit the booleans only
+        filter_records(records, "workflow=invoices")
+    """
+    out = list(records)
+    for condition in conditions:
+        if "=" not in condition:
+            raise CalibrationError(f"condition must be key=value, got {condition!r}")
+        key, _, raw = condition.partition("=")
+        key, raw = key.strip(), raw.strip()
+        wanted: Any = raw
+        if raw.lower() in ("true", "false"):
+            wanted = raw.lower() == "true"
+        kept = []
+        for record in out:
+            value = record.meta.get(key, getattr(record, key, None))
+            if value is None:
+                continue
+            if isinstance(value, bool) or isinstance(wanted, bool):
+                match = bool(value) == bool(wanted)
+            else:
+                match = str(value) == raw
+            if match:
+                kept.append(record)
+        out = kept
+    if not out:
+        raise CalibrationError(f"no records match {' '.join(conditions)}")
+    return out
+
+
+def slices(records: Sequence[CalibrationRecord], key: str = "type") -> dict[str, list[CalibrationRecord]]:
+    """Group records by a meta key, for per-slice calibration and reporting."""
+    grouped: dict[str, list[CalibrationRecord]] = {}
+    for record in records:
+        value = record.meta.get(key)
+        if value is None:
+            continue
+        grouped.setdefault(str(value), []).append(record)
+    return grouped
 
 
 # -------------------------------------------------------------------- metrics

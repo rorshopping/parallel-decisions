@@ -242,14 +242,22 @@ class Decider:
         t0 = time.perf_counter()
         self._log(f"loading {self.model_id} ...")
         self._model, self._tokenizer = load(self.model_id)
-        self._kv_bytes_per_token = _estimate_kv_bytes_per_token(self._model)
         self._model_bytes = _estimate_model_bytes(self._model)
+        config_estimate = _estimate_kv_bytes_per_token(self._model)
+        try:
+            measured = self._measure_kv_bytes_per_token()
+        except Exception as exc:  # pragma: no cover - architecture-dependent
+            self._log(f"cache measurement unavailable ({type(exc).__name__}: {exc}); "
+                      f"using the config estimate")
+            measured = None
+        self._kv_bytes_per_token = measured or config_estimate
         elapsed = time.perf_counter() - t0
         self._log(f"loaded in {elapsed:.1f}s "
                   f"(kv/token ~{self._kv_bytes_per_token or 0} bytes)")
         self._clamp_memory_budget()
         self.log_event("load", seconds=round(elapsed, 3),
                        kv_bytes_per_token=self._kv_bytes_per_token,
+                       kv_bytes_per_token_from_config=config_estimate,
                        model_bytes=self._model_bytes,
                        memory_budget_bytes=self.memory_budget_bytes,
                        config=self.config.source)
@@ -279,6 +287,39 @@ class Decider:
                       f"minus {self._model_bytes / 1024**3:.1f} GB of weights); "
                       f"clamping to avoid swapping")
             self.memory_budget_bytes = allowance
+
+    def _measure_kv_bytes_per_token(self) -> int | None:
+        """Measure the cache growth per token at two prompt lengths, in bytes.
+
+        Deriving this from the model config is a guess that breaks on anything
+        unusual: hybrid architectures (Qwen3.5 alternates linear-attention and
+        self-attention layers) keep a constant-size state on most layers, so a
+        per-layer KV formula overestimates by a large factor. Measuring the two
+        endpoints removes the constant part and needs no architecture knowledge.
+
+        Raises away any failure: an unmeasurable model falls back to the config
+        estimate rather than failing to load.
+        """
+        from mlx_lm.models.cache import make_prompt_cache
+
+        def cache_bytes(n_tokens: int) -> int:
+            toks = [100 + (i % 500) for i in range(n_tokens)]
+            cache = make_prompt_cache(self._model)
+            self._model(mx.array([toks], dtype=mx.int32), cache=cache)
+            arrays = list(_cache_arrays(cache))
+            mx.eval(*arrays)
+            return sum(int(a.nbytes) for a in arrays)
+
+        n1, n2 = 64, 256
+        b1 = cache_bytes(n1)
+        b2 = cache_bytes(n2)
+        per_token = (b2 - b1) / (n2 - n1)
+        if per_token <= 0:
+            return None
+        self._log(f"measured cache growth: {per_token:.0f} bytes per token "
+                  f"({per_token * 1000 / 1024**2:.2f} MB per 1k tokens)")
+        _clear_mlx_cache()
+        return int(per_token)
 
     # ------------------------------------------------------------------ lock
     def _acquire_lock(self, what: str):
@@ -661,6 +702,34 @@ def _coerce_calibrator(value: "str | Calibrator | Mapping[str, Any] | None") -> 
     if isinstance(value, (str, bytes)) or hasattr(value, "__fspath__"):
         return Calibrator.from_json(str(value))
     raise TypeError(f"calibration must be a path, dict or Calibrator, got {type(value).__name__}")
+
+
+def _cache_arrays(layer_cache: Any) -> Iterable[Any]:
+    """Every array-like attribute of one cache layer.
+
+    `mlx-lm` caches vary by architecture: `KVCache` holds `keys`/`values`, hybrid
+    models add constant-size `state`, quantised caches add scales/biases, and some
+    keep a nested list in `cache`. Anything with `nbytes` counts; everything else is
+    ignored, so a new cache class degrades to "not measured" rather than crashing.
+    """
+    seen: set[int] = set()
+    stack = [layer_cache]
+    while stack:
+        item = stack.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        if hasattr(item, "nbytes"):
+            yield item
+            continue
+        for name in ("keys", "values", "state", "cache", "scales", "biases"):
+            value = getattr(item, name, None)
+            if value is None:
+                continue
+            if hasattr(value, "nbytes"):
+                yield value
+            elif isinstance(value, (list, tuple)):
+                stack.extend(value)
 
 
 def _physical_ram_bytes() -> int | None:

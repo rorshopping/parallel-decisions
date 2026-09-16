@@ -11,10 +11,12 @@ from .calibration import (
     Calibrator,
     adaptive_ece,
     confidence,
+    filter_records,
     fit_calibration,
     load_records,
     reliability_table,
     risk_coverage,
+    slices,
 )
 from .config import ConfigError, load_config
 from .engine import DEFAULT_MODEL, Decider
@@ -121,6 +123,13 @@ def cmd_calibrate(args) -> int:
     """Fit a calibrator from a labelled file and report before/after."""
     try:
         records = load_records(args.data)
+        for condition in args.where:
+            records = filter_records(records, condition)
+        for condition in args.exclude:
+            kept = set(id(r) for r in filter_records(records, condition))
+            records = [r for r in records if id(r) not in kept]
+            if not records:
+                raise CalibrationError(f"excluding {condition} left no records")
     except CalibrationError as exc:
         print(f"calibration data error: {exc}", file=sys.stderr)
         return 2
@@ -129,7 +138,8 @@ def cmd_calibrate(args) -> int:
                           select_by=args.select_by)
     best = fit.calibrator
 
-    print(f"loaded {len(records)} labelled records from {args.data}")
+    scope = f" ({', '.join(args.where)})" if args.where else ""
+    print(f"loaded {len(records)} labelled records from {args.data}{scope}")
     print(f"accuracy of the top choice: "
           f"{sum(1 for r in records if r.correct) / len(records):.1%}")
     print()
@@ -159,6 +169,25 @@ def cmd_calibrate(args) -> int:
         print(f"{i:>4} {raw_row['n']:>5} {raw_row['confidence']:>9.3f} "
               f"{raw_row['accuracy']:>8.3f} {cal_row['confidence']:>9.3f} "
               f"{cal_row['accuracy']:>8.3f}")
+
+    # Per-slice view: one calibrator fitted on mixed field types can look fine while
+    # being badly wrong inside a slice, because each slice has its own base rate.
+    if not args.no_slices:
+        grouped = slices(records, args.slice_by)
+        if len(grouped) > 1:
+            print()
+            print(f"calibration by {args.slice_by} (the fitted map applied per slice)")
+            print(f"{args.slice_by:>12} {'n':>5} {'acc':>7} {'raw ECE':>9} {'cal ECE':>9} "
+                  f"{'mean conf':>10} {'mean acc':>9}")
+            for name, group in sorted(grouped.items()):
+                confs = [confidence(best.transform(r.distribution)) for r in group]
+                corrects = [r.correct for r in group]
+                print(f"{name:>12} {len(group):>5} "
+                      f"{sum(corrects) / len(corrects):>7.1%} "
+                      f"{adaptive_ece([r.confidence for r in group], corrects):>9.3f} "
+                      f"{adaptive_ece(confs, corrects):>9.3f} "
+                      f"{sum(confs) / len(confs):>10.3f} "
+                      f"{sum(corrects) / len(corrects):>9.3f}")
 
     print()
     print("routing: error rate when acting on the most-confident answers")
@@ -208,6 +237,15 @@ def main(argv: list[str] | None = None) -> int:
                        help="cross-validation metric used to pick the method")
     p_cal.add_argument("--folds", type=int, default=5)
     p_cal.add_argument("--bins", type=int, default=10)
+    p_cal.add_argument("--where", action="append", default=[],
+                       help="keep only records matching key=value (repeatable), "
+                            "e.g. --where type=noul --where workflow=invoices")
+    p_cal.add_argument("--exclude", action="append", default=[],
+                       help="drop records matching key=value (repeatable)")
+    p_cal.add_argument("--slice-by", default="type",
+                       help="meta key for the per-slice table (default: type)")
+    p_cal.add_argument("--no-slices", action="store_true",
+                       help="skip the per-slice calibration table")
     p_cal.set_defaults(func=cmd_calibrate)
 
     p_cfg = sub.add_parser("config", help="show the pd.toml / PD_* settings in effect")

@@ -1,9 +1,9 @@
-# Calibration vs softmax — what the probabilities in this package actually mean
+# Calibration — making the probabilities in this package usable
 
-Short version: **the numbers here are softmax scores, not calibrated probabilities.**
-They are useful for ranking answers inside a field. They are not safe to threshold on
-("only act if probability > 0.9") without checking them first. This file explains the
-difference, shows what we measured, and lists the standard fixes.
+Short version: **the engine reports `softmax` over a field's allowed answers, not the
+probability that the answer is correct.** This file explains the difference, shows
+what we measured, and documents the calibration machinery that now ships with the
+package (and what it does and does not fix).
 
 ## 1. What the engine computes
 
@@ -30,82 +30,142 @@ P(answer is correct | stated confidence = 0.9) ≈ 0.9
 
 Calibration is measured by bucketing answers by confidence and comparing each bucket's
 mean confidence with its empirical accuracy. Plotted, a calibrated model lies on the
-diagonal (a *reliability diagram*). The summary number is **ECE** — expected calibration
-error — the bucket-size-weighted average gap between confidence and accuracy.
+diagonal (a *reliability diagram*). The summary number is **ECE** — expected
+calibration error — the bucket-size-weighted average gap between confidence and
+accuracy.
+
+Two variants matter in practice and both ship in `calibration.py`:
+
+- `ece()` — equal-**width** bins. Standard, but here the confidence distribution is
+  so skewed (most answers land in one bin) that the number is decided by that single
+  bin.
+- `adaptive_ece()` — equal-**count** bins, with edges at empirical quantiles so that
+  records sharing a confidence never get split across bins. This is the better
+  model-selection signal at these distributions, and it is the default (`--select-by
+  ece_adaptive`).
 
 A well-calibrated 0.7 means: when this model says 0.7, it is right about 70% of the
-time. That property is what lets software act autonomously: threshold at 0.95 for
-automation, 0.6–0.95 for human review, below 0.6 for "ask again / escalate".
+time. That property is what lets software act autonomously: act at ≥ threshold, route
+the middle band to review, refuse below it.
 
 ## 3. Why softmax is not that
 
 Three separate reasons:
 
 1. **Training objective mismatch.** The model was trained to predict the next token in
-   a web-scale corpus, not to be right at a rate equal to its probability. Next-token
-   likelihood and answer correctness are correlated but distinct quantities.
+   a web-scale corpus, not to be right at a rate equal to its probability.
 2. **Slicing changes the scale.** We discard everything except a handful of candidate
-   tokens and renormalise. Even a perfectly calibrated full-vocabulary distribution
-   need not stay calibrated after conditioning on a small slice.
-3. **Chat-tuned models are usually overconfident.** Preference training rewards
-   confident, decisive answers and penalises hedging, so stated confidence tends to
-   sit above true accuracy. This is well documented across open and closed models.
+   tokens and renormalise. Even a well-calibrated full-vocabulary distribution need not
+   stay calibrated after conditioning on a small slice.
+3. **Chat-tuned models are overconfident.** Preference training rewards confident,
+   decisive answers, so stated confidence sits above true accuracy.
 
-## 4. What we measured on this package's default model
+## 4. What we measured on the default model
 
-From the full public TypeSafe evaluation (Noul questions, where the run recorded the
-per-answer probability; 236 scored pairs, one run):
+Recorded run, 7B, single pass over the 373 public question slots (`evals/analysis/REPORT.md`):
 
-| confidence bucket | n | accuracy | gap |
-|---|---|---|---|
-| 0.5–0.6 | 6 | 66.7% | +11.7 |
-| 0.6–0.7 | 8 | 62.5% | −2.5 |
-| 0.7–0.8 | 9 | 44.4% | −30.6 |
-| 0.8–0.9 | 9 | 77.8% | −7.2 |
-| 0.9–1.0 | 204 | 86.3% | −8.7 |
+| slice | n | accuracy | mean confidence (correct) | mean confidence (wrong) |
+|---|---|---|---|---|
+| `noul` (yes/no) | 236 | 83.1% | 0.959 | 0.891 |
+| choice | 110 | 63.6% | — | — |
+| score (0–3) | 27 | 25.9% exact, 85.2% within 1 | — | — |
 
-- **ECE ≈ 0.094** (Qwen2.5-7B); the 8B variant measured 0.142.
-- The model is **almost always very confident** — 204 of 236 answers landed in the
-  0.9–1.0 bucket — and in that bucket it was right 86.3% of the time.
-- **Wrong answers were nearly as confident as right ones:** mean confidence 0.89 on
-  incorrect vs 0.96 on correct; 28 of 40 wrong answers carried ≥0.90 confidence.
+- **ECE ≈ 0.094** (Qwen2.5-7B) equal-width on the earlier noul-only measurement; the
+  fuller slice measures **ECE 0.124** on the same basis (n=236 noul).
+- The model is **almost always very confident** — 184 of 236 noul answers landed in
+  the 0.95–1.00 band — and in that band it was right 88.0% of the time.
+- **Wrong answers were nearly as confident as right ones:** 0.891 vs 0.959 mean; 28 of
+  40 wrong answers carried ≥0.90.
+- **AUROC of the raw confidence is 0.74 overall** (0.91 on choice fields, 0.66 on
+  noul). So the score does contain signal about correctness — it is a usable *ranking*
+  signal — it is just on the wrong scale.
 
-Practical consequence: on this workload the score works as a *ranking* signal within a
-question (which of these options is most likely), but **not** as a *decision* signal
-("should I act on this answer?"). Thresholding on it would let a large share of errors
-straight through.
+## 5. What the package now does about it
 
-Caveats: single run, curated evaluation cases, n=236, and only Noul questions (the
-only ones where the runner recorded an answer probability). The heavy skew into the
-top bucket means ECE is dominated by that one row.
+`parallel_decisions.calibration` implements three post-hoc methods, all fitted on
+labelled data and all **monotone in the top confidence**, so they move the reported
+number and never the chosen answer:
 
-## 5. What "trained calibration" (TypeSafe's RLCD) changes
+| method | form | parameters |
+|---|---|---|
+| `temperature` | `p' ∝ p ** (1/T)` (equivalent to `softmax(z/T)`) | 1 |
+| `platt` | `σ(a · logit(c) + b)`, fitted by IRLS | 2 |
+| `isotonic` | monotone step fit of confidence → empirical accuracy (PAV) | many |
 
-TypeSafe's claim is that they optimise for calibration directly — the training signal
-rewards saying 0.7 when the model is right ~70% of the time, not just being right.
-If that works, the reliability diagram hugs the diagonal and confidence becomes a
-usable routing signal (their docs build directly on this: autonomy thresholds,
-escalation bands, "confidence-gated routing").
+`fit_calibration()` compares raw confidence against all three by label-stratified
+k-fold cross-validation and **refuses to ship a method that loses to raw softmax out
+of sample** — "do nothing" is an explicit option.
 
-This package cannot recreate that without training. Its default model was never
-optimised for calibration, so the honest position is: treat probabilities as relative
-confidence, and calibrate them yourself before using them in control flow.
+```bash
+.venv/bin/pd calibrate --data labelled.jsonl --out calibration.json
+.venv/bin/pd calibrate --data labelled.jsonl --where type=noul   # fit a slice
+.venv/bin/python examples/routing.py --data labelled.jsonl --max-error 0.01
+```
 
-## 6. Fixes that do not require retraining
+`Decider(calibration="calibration.json")` then attaches it; every `FieldValue` keeps
+`raw_probability` alongside the calibrated `probability`.
 
-1. **Temperature scaling** — fit one parameter `T` on labelled data so that
-   `P' = softmax(z / T)` minimises ECE. This is the standard first step (Guo et al.,
-   "On Calibration of Modern Neural Networks"); it preserves argmax, so decisions do
-   not change, only the reported confidence.
-2. **Platt scaling / isotonic regression** — map raw confidence to empirical accuracy
-   with a monotone fit. More flexible than temperature; needs more labelled data.
-3. **Bucket and threshold** — using the measured reliability table above, act on the
-   0.9+ bucket only for high-stakes automation, and route the rest to review. Crude
-   but effective, and it uses the data you already have.
-4. **Collect your own labelled set per domain** — calibration is domain-specific; a
-   curve fitted on invoice data does not transfer to support tickets.
+### What it fixes, and what it does not
 
-If you want temperature scaling built into this package, the honest interface would be
-`Decider(calibration="path/to/temperature.json")`, with a small script to fit `T` from
-a labelled set. Nothing is implemented yet — the current code reports raw softmax and
-says so in `README.md`.
+- It fixes the **scale**, which is what thresholding needs. On a 300-row synthetic set
+  that is overconfident by construction, temperature scaling moved adaptive ECE from
+  0.158 to 0.059 and the reliability table onto the diagonal.
+- It does **not** add information. AUROC is unchanged by every method (monotone maps
+  cannot reorder); a confidence that does not separate right from wrong cannot be
+  calibrated into one that does.
+- It does **not** transfer across domains, and often not across question types: a
+  calibrator fitted on all field types mixed together can look fine overall while
+  being wrong inside a slice, because each slice has its own base rate (`pd calibrate`
+  prints the per-slice table for exactly this reason).
+- It needs data. On ~100 labelled noul rows from the published eval, **no method beat
+  raw softmax out of sample** and `fit_calibration` selected `identity`. That is the
+  honest outcome at that sample size, not a failure of the methods: 100 records cannot
+  pin a monotone curve at the 0.9+ end where nearly all the mass sits.
+
+We also checked whether a different confidence signal ranks better than the top
+probability (`evals/confidence_features.py`): margin over the runner-up, log-odds, and
+normalised entropy all land within 0.01 AUROC of the top probability or below it
+(0.739 / 0.735 / 0.715 vs 0.743 overall). The top probability is the best of these
+features, so the calibrator fits on it.
+
+## 6. Using it as a routing signal
+
+`examples/routing.py` derives the policy from data rather than guessing, and evaluates
+it **out of sample** (the calibrator is refit inside the fold loop, so no record is
+scored by a calibrator that saw it):
+
+```
+error budget -> threshold, coverage, act-bucket error
+  budget  threshold  acted on   share  errors  error rate  95% upper
+   0.00%     0.8464        11   11.3%       0       0.00%     25.88%
+   1.00%     0.8464        11   11.3%       0       0.00%     25.88%
+   5.00%     0.8464        11   11.3%       0       0.00%     25.88%
+
+POLICY (budget 1.00%):
+  act     conf >= 0.8464   11/97 = 11.3% of work, error rate 0.00% (95% upper 25.88%)
+  review  0.5013 <= conf < 0.8464   76 decisions
+  refuse  conf < 0.5013   10 decisions
+```
+
+Read the **95% upper bound**, not the point estimate: zero errors in 11 decisions is
+consistent with a true error rate anywhere up to 26%. A "0.00% error rate" on 11
+samples is not evidence of a 0% error rate. The act bucket will only be trustworthy
+with a few hundred labelled rows from the domain it runs in — that is the single
+thing standing between this and a usable automation threshold.
+
+## 7. Collecting the data
+
+The preferred source is your own domain, because calibration does not transfer:
+
+1. **Your domain samples** — 100–200 labelled items per domain is the stated minimum,
+   and the routing table above shows why more is better.
+2. **The published eval** (`evals/results/calibration/*.jsonl`), which is what the
+   numbers in this file come from. Records carry `distribution`, `chosen`, `target`,
+   `correct`, and `type`/`workflow`/`qid` for slicing.
+3. **Synthetic cases** (`quality-eval/`) — weakest, but better than nothing for a
+   first look.
+
+`evals/domains/<name>/` is the place for the first kind; `evals/domains/invoice/` is
+the worked example, and its `score.py` prints each field's accuracy next to the
+constant-answer baseline so a high number on a skewed field cannot be mistaken for
+skill.

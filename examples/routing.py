@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from parallel_decisions import (  # noqa: E402
     Calibrator,
     confidence,
+    filter_records,
     fit_calibration,
     load_records,
     wilson_interval,
@@ -107,6 +108,9 @@ def refuse_threshold(confs, corrects) -> tuple[float, dict | None]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", required=True, help="labelled records (.jsonl/.json)")
+    ap.add_argument("--where", action="append", default=[],
+                    help="keep only records matching key=value (repeatable), "
+                         "e.g. --where type=noul --where workflow=invoices")
     ap.add_argument("--calibrator", help="use this fitted calibrator instead of refitting per fold")
     ap.add_argument("--method", default="auto", choices=("auto", "temperature", "platt", "isotonic"))
     ap.add_argument("--folds", type=int, default=5)
@@ -119,6 +123,8 @@ def main() -> None:
     args = ap.parse_args()
 
     records = load_records(args.data)
+    for condition in args.where:
+        records = filter_records(records, condition)
     corrects = [r.correct for r in records]
     raw = [r.confidence for r in records]
 
@@ -156,7 +162,8 @@ def main() -> None:
     else:
         mode = "out-of-sample (calibrator refit per fold)" if honest \
             else f"calibrator {args.calibrator} applied as-is"
-        print(f"routing policy from {args.data}")
+        scope = f" [{', '.join(args.where)}]" if args.where else ""
+        print(f"routing policy from {args.data}{scope}")
         print(f"  {len(records)} labelled decisions, top-choice accuracy "
               f"{report['accuracy']:.1%}, {mode}")
         print(f"  methods fitted per fold: {', '.join(sorted(set(kinds)))}")

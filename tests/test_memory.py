@@ -51,6 +51,46 @@ def test_clamp_is_a_noop_without_a_model_estimate():
     assert decider.memory_budget_bytes == before
 
 
+def test_cache_arrays_finds_any_cache_shape():
+    """Config-based KV estimates break on hybrid models, so the engine measures the
+    cache; that only works if every array in any cache class is found."""
+    from parallel_decisions.engine import _cache_arrays
+
+    class Array:
+        def __init__(self, nbytes):
+            self.nbytes = nbytes
+
+    class KVCache:
+        keys = Array(100)
+        values = Array(120)
+
+    class HybridCache:          # linear-attention layers add a constant-size state
+        keys = Array(50)
+        state = Array(1000)
+
+    class NestedCache:          # some caches keep a list in `.cache`
+        cache = [Array(10), Array(20)]
+
+    class Empty:
+        pass
+
+    assert sorted(a.nbytes for a in _cache_arrays(KVCache())) == [100, 120]
+    assert sorted(a.nbytes for a in _cache_arrays(HybridCache())) == [50, 1000]
+    assert sorted(a.nbytes for a in _cache_arrays(NestedCache())) == [10, 20]
+    assert list(_cache_arrays(Empty())) == []
+
+
+def test_cache_arrays_does_not_loop_forever_on_self_reference():
+    from parallel_decisions.engine import _cache_arrays
+
+    class Looping:
+        pass
+
+    loop = Looping()
+    loop.cache = [loop]
+    assert list(_cache_arrays(loop)) == []
+
+
 def test_a_model_larger_than_the_headroom_does_not_produce_a_negative_budget():
     decider = _decider(memory_budget_gb=8.0)
     decider._model_bytes = 512 * 1024 ** 3        # absurd, but must not go negative
