@@ -125,74 +125,78 @@ of sample** — "do nothing" is an explicit option.
   cannot pin a monotone curve at the 0.9+ end, where nearly all the mass sits.
   Section 6 has the numbers with their sample sizes.
 
-## 6. What this measured, on 188 labelled decisions
+## 6. What this measured, on 277 labelled decisions
 
-From `evals/results/calibration/qwen2.5-7b.jsonl` (the packaged engine run over the
-public cases, three of four workflows complete). All numbers are out of sample: the
+From `evals/results/calibration/qwen2.5-7b.jsonl` (the packaged engine over all four
+public workflows, 70.8% top-choice accuracy). All numbers are out of sample: the
 calibrator is refitted inside the fold loop, so nothing is scored by a map that saw it.
 
 ```
 cross-validated comparison (5 folds, selection metric: ece_adaptive)
 method                         mean          std          raw
-isotonic                     0.1506       0.0197       0.2050
-temperature                  0.2100       0.0151       0.2050
-identity                     0.2212       0.0202       0.2050
-platt                        0.2689       0.0167       0.2050
-selected: isotonic (11 points)
+temperature                  0.1286       0.0218       0.1964
+isotonic                     0.1358       0.0372       0.1964
+identity                     0.2049       0.0278       0.1964
+platt                        0.2661       0.0145       0.1964
+selected: temperature (T=3.301)
 
-reliability (equal-count bins, adaptive)   ECE 0.205 -> 0.060
-reliability by slice, with that map applied:
+reliability by slice, with the fitted map applied:
         type     n     acc   raw ECE   cal ECE  mean conf  mean acc
-      choice    51   66.7%     0.271     0.208      0.807     0.667
-        noul   126   77.0%     0.143     0.085      0.764     0.770
-       score    11   18.2%     0.695     0.470      0.557     0.182
+      choice    73   60.3%     0.290     0.136      0.646     0.603
+        noul   178   80.9%     0.114     0.041      0.781     0.809
+       score    26   30.8%     0.558     0.262      0.512     0.308
 ```
 
-Read that as: calibration helps, by about a third, and ECE stays around 0.15 — five
-times the roadmap's 0.03 target. Three things limit it, all measured:
+Read that as: **calibration helps by about a third and ECE stays near 0.13** — four
+times the roadmap's 0.03 target. Worth noticing that the `noul` slice reaches 0.041,
+much closer to the target, simply because it has the most data (178 records) and the
+least skewed confidence distribution. The `score` slice, at 26 records and 31%
+accuracy, is where the headline ECE comes from — and the honest conclusion there is
+"do not act on this field type", not "calibrate harder".
 
-1. **The confidence of 1.0 is not certainty.** 14 answers carry `probability` exactly
-   1.0000 and 2 of them are wrong. The isotonic map squashes that group to ~0.99 and
-   the errors remain, so no threshold derived from the top probability can reach a 1%
-   error rate on this data.
+The *selected method* is also not stable across sample sizes: on an earlier 188-record
+subset isotonic won (0.151) with temperature second (0.210); on the full 277,
+temperature wins (0.129) and isotonic is second (0.136). The two are within each
+other's fold-to-fold standard deviation, so treat "which method" as a detail and "did
+it beat raw" as the question that matters.
+
+Three things limit the result, all measured:
+
+1. **The top confidence bin is not pure.** 14 answers on the 188-record subset carried
+   `probability` exactly 1.0000 and 2 of them were wrong. Isotonic squashes that group
+   to ~0.99 and the errors remain, so no threshold derived from the top probability
+   reaches a 1% error rate on this data.
 2. **Sample size, not method choice.** Fitting on the 126 `noul` records alone, no
-   method beats doing nothing (identity 0.181 mean vs isotonic 0.186, and identity's
-   in-sample value is 0.143 — the *estimate* is noisy at this size). The same map
-   fitted on all 188 records and applied to the `noul` slice does reduce its ECE
-   (0.143 → 0.085), so a mixture-fitted map transfers across slices better than a
-   slice-fitted one at small n.
+   method beats doing nothing (identity 0.181 mean vs isotonic 0.186, while identity's
+   in-sample value is 0.143 — the *estimate* is noisy at that size). A map fitted on
+   the full set and applied to the `noul` slice does better (raw ECE 0.114 → 0.041), so
+   a mixture-fitted map transfers across slices better than a slice-fitted one at small n.
 3. **Accuracy ceilings what calibration can express.** A map can only make the number
-   match the observed error rate. The `score` slice is right 18% of the time with mean
-   confidence 0.557; isotonic moves it to 0.470, and the honest conclusion there is
-   "this field type is not reliable enough to act on", not "calibrate harder".
+   match the observed error rate. The `score` slice is right 30.8% of the time with
+   mean confidence 0.512; the map moves its ECE to 0.262 and the errors remain.
 
 We also checked whether a different confidence signal ranks better than the top
 probability (`evals/confidence_features.py`, 145 records): margin over the runner-up,
 log-odds and normalised entropy all land within 0.01 AUROC of the top probability or
 below it (0.739 / 0.735 / 0.715 vs 0.743), so the calibrator fits on the top
-probability. The raw confidence does rank well — AUROC 0.747 overall, 0.91 on choice
+probability. The raw confidence does rank well — AUROC ~0.75 overall, 0.91 on choice
 fields — so it is a usable ranking signal and always was.
 
 ## 7. Using it as a routing signal
 
 `examples/routing.py` derives the policy from data rather than guessing, and evaluates
-it out of sample. On the 188 records above, at the roadmap's 1% error budget:
+it out of sample. On the 277 records above:
 
 ```
-  error budget -> threshold, coverage, act-bucket error
-   budget  threshold  acted on   share  errors  error rate  95% upper
-    1.00%     1.0000        14    7.4%       2      14.29%     39.94%  (budget unreachable)
-
-  POLICY (budget 1.00%):
-    act     conf >= 1.0000   14/188 = 7.4% of work, error rate 14.29% (95% upper 39.94%) — budget NOT met
-    review  0.4999 <= conf < 1.0000   164 decisions
-    refuse  conf < 0.4999   10 decisions
+coverage 25%:  4/69 errors  = 5.8%  (95% upper 14.0%)
+coverage 50%: 13/138 errors = 9.4%  (95% upper 15.5%)
+coverage 100%: 81/277 errors = 29.2% (95% upper 34.9%)
 ```
 
-**The 1% budget is unreachable on this data, and the demo says so.** The most useful
-rows are the coverage ones: acting on the most confident 25% carries a 6.4% error rate
-(95% upper 17.2%), and the most confident 50% carries 12.8%. That is a usable
-review-prioritisation signal and not a usable automation threshold.
+**A 1% error budget is unreachable on this data**, and the demo says so — it prints
+`(budget unreachable)` instead of a green row. Acting on the most confident quarter
+carries ~6% error, halving the overall rate. That is a usable *prioritisation* signal
+and not a usable automation threshold.
 
 Two rules for reading any of these tables:
 
