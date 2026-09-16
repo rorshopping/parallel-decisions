@@ -177,10 +177,25 @@ demo is a measurement tool, not a policy you can copy.
 
 ```python
 results = decider.decide_many([ctx1, ctx2, ctx3], schema)
+
+# many short contexts with one big schema: prefill the schema block once
+results = decider.decide_many(tickets, TICKET_SCHEMA, shared_prefix=True)
+
+# or drive it by hand, e.g. across a long-lived worker
+prefix = decider.prepare(TICKET_SCHEMA)          # one prefill of the schema block
+try:
+    for ticket in tickets:
+        result = decider.decide_with_prefix(prefix, ticket)
+finally:
+    prefix.release()
 ```
 
-Sequential calls that reuse the loaded model and the compiled schema. (True
-cross-context batching is not implemented; `decide_many` is a loop.)
+Calls are sequential and each context gets its own prefill of *its own text*.
+`shared_prefix=True` skips re-prefilling the schema block, which is most of the
+prefill when the contexts are shorter than the schema. True batching into a single
+forward pass is not implemented: it needs per-row sequence lengths in the KV cache,
+and `mlx-lm`'s forward path takes no attention mask, so a padded batch would attend
+over its own padding.
 
 ### Save and load schemas
 

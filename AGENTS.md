@@ -75,7 +75,7 @@ cli.py          `pd validate` / `decide` / `calibrate` / `config`.
 ```bash
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e ".[dev]"
-.venv/bin/pytest                      # 123 tests, no model needed
+.venv/bin/pytest                      # 134 tests, no model needed
 .venv/bin/pd validate examples/fraud.json --check-tokens  # tokenizer only, no model
 .venv/bin/pd decide --schema examples/fraud.json --context "..."   # needs the model
 ```
@@ -107,9 +107,14 @@ assume more memory; respect the chunking design.
 1. **More labelled data.** Everything about calibration is limited by it. The
    routing demo is only meaningful with a few hundred labelled rows from the domain
    it will run in. See `evals/domains/*` in the research tree for the format.
-2. **True cross-context batching.** `decide_many` is a loop. Batching contexts with
-   a shared schema would amortise prefill across requests — the biggest remaining
-   performance win, since prefill is 84.6% of case wall time.
+2. **True cross-context batching.** `decide_many` is a loop; `shared_prefix=True`
+   removes the schema-block prefill but each context still gets its own pass for its
+   own text. A single batched forward pass over several contexts needs per-row
+   sequence lengths in the KV cache, and `mlx-lm`'s forward path takes no attention
+   mask, so a padded batch attends over the padding. Doing this properly means
+   padding-aware attention (a mask, or a custom per-row attention) — a real
+   engineering task, not a loop rewrite, and the largest remaining performance win
+   since prefill is 84.6% of case wall time.
 3. **Order-robust choice decisions.** The model picks the first-listed choice in 82%
    of choice fields, and accuracy is 96.7% when the truth is listed first versus
    24.5% when it is not. Scoring each option under a few rotations of the option
