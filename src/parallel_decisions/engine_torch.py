@@ -242,6 +242,7 @@ def decide_torch(rt: TorchRuntime, context: str, schema, compiled, *, temperatur
             for cf in collisions:
                 lps = [log_probs.get(cf.row_name, {}).get(ci, -1e9)
                        for ci in range(len(cf.sequences))]
+                import torch
                 import torch.nn.functional as F
                 probs = F.softmax(rt.torch.tensor(lps, dtype=torch.float32), dim=-1).tolist()
                 fv = _field_value(cf, probs)
