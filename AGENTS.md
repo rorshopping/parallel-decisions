@@ -82,6 +82,13 @@ assume more memory; respect the chunking design.
 - Do not add dependencies beyond `mlx` / `mlx-lm` without a strong reason; the
   server example deliberately uses the standard library only.
 
+## Direction
+
+The phased plan for this package (calibration, multi-select fields, batching,
+packaging, integrations) is maintained in the research tree at
+`~/Documents/projects/rlcd-research/ROADMAP.md`. Phase 1 (temperature scaling /
+calibration API) is the next intended change to this codebase.
+
 ## Provenance
 
 - Method origin: `harshatheg/Qwen-2.5-1B-RLCD` (Apache-2.0) community artifact.
