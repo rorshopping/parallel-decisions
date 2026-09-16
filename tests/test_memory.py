@@ -19,6 +19,21 @@ def _decider(**kwargs) -> Decider:
     return Decider(model_id="unused", warmup=False, config=Config(), **kwargs)
 
 
+class _FakeArray:
+    """Stands in for mx.array where only shape/ndim/nbytes matter."""
+
+    def __init__(self, shape):
+        self.shape = tuple(shape)
+        self.ndim = len(self.shape)
+
+    @property
+    def nbytes(self) -> int:
+        total = 2                                 # fp16
+        for dim in self.shape:
+            total *= dim
+        return total
+
+
 def test_physical_ram_is_reported_and_plausible():
     ram = _physical_ram_bytes()
     assert ram is not None
@@ -51,44 +66,82 @@ def test_clamp_is_a_noop_without_a_model_estimate():
     assert decider.memory_budget_bytes == before
 
 
-def test_cache_arrays_finds_any_cache_shape():
-    """Config-based KV estimates break on hybrid models, so the engine measures the
-    cache; that only works if every array in any cache class is found."""
-    from parallel_decisions.engine import _cache_arrays
+def test_cache_slots_walks_instance_storage_only():
+    """Properties must not be walked.
 
-    class Array:
-        def __init__(self, nbytes):
-            self.nbytes = nbytes
+    `mlx-lm`'s `KVCache.state` is a *view* over keys/values used for serialisation;
+    writing a broadcast through it replaces the real cache with a truncated copy. That
+    bug silently corrupted the cache during development, so this pins the rule.
+    """
+    from parallel_decisions.engine import _cache_slots
 
-    class KVCache:
-        keys = Array(100)
-        values = Array(120)
+    class ViewLikeKVCache:
+        def __init__(self):
+            self.keys = _FakeArray((1, 4, 8, 8))
+            self.values = _FakeArray((1, 4, 8, 8))
+            self.offset = 0      # a scalar: must not be walked as a per-sequence array
 
-    class HybridCache:          # linear-attention layers add a constant-size state
-        keys = Array(50)
-        state = Array(1000)
+        @property
+        def state(self):        # a view, not storage
+            return (self.keys, self.values)
 
-    class NestedCache:          # some caches keep a list in `.cache`
-        cache = [Array(10), Array(20)]
-
-    class Empty:
-        pass
-
-    assert sorted(a.nbytes for a in _cache_arrays(KVCache())) == [100, 120]
-    assert sorted(a.nbytes for a in _cache_arrays(HybridCache())) == [50, 1000]
-    assert sorted(a.nbytes for a in _cache_arrays(NestedCache())) == [10, 20]
-    assert list(_cache_arrays(Empty())) == []
+    slots = list(_cache_slots(ViewLikeKVCache()))
+    assert sorted(name for name, _, _ in slots) == ["keys", "values"]
+    assert all(index is None for _, index, _ in slots)
 
 
-def test_cache_arrays_does_not_loop_forever_on_self_reference():
-    from parallel_decisions.engine import _cache_arrays
+def test_cache_slots_finds_list_entries_and_skips_none():
+    from parallel_decisions.engine import _cache_slots
 
-    class Looping:
-        pass
+    class ArraysCache:
+        def __init__(self):
+            self.cache = [_FakeArray((1, 3, 8)), None, _FakeArray((1, 32, 8, 8))]
+            self.lengths = None
 
-    loop = Looping()
-    loop.cache = [loop]
-    assert list(_cache_arrays(loop)) == []
+    slots = {(name, index) for name, index, _ in _cache_slots(ArraysCache())}
+    assert slots == {("cache", 0), ("cache", 2)}
+
+
+def test_repeat_array_only_touches_batch_major_arrays(monkeypatch):
+    """Scalars, already-batched arrays and n==1 must not be repeated."""
+    from parallel_decisions import engine
+
+    calls = []
+    monkeypatch.setattr(engine.mx, "repeat",
+                        lambda v, n, axis: calls.append((v.shape, n, axis)) or v)
+
+    assert engine._repeat_array(None, 4) is None
+    assert engine._repeat_array(_FakeArray(()), 4).shape == ()           # a scalar
+    assert engine._repeat_array(_FakeArray((6, 3)), 4).shape == (6, 3)   # already batched
+    assert engine._repeat_array(_FakeArray((1, 3)), 1).shape == (1, 3)   # nothing to do
+    assert calls == []
+    engine._repeat_array(_FakeArray((1, 3)), 4)
+    assert calls == [((1, 3), 4, 0)]
+
+
+def test_chunk_size_accounts_for_the_constant_per_row_state():
+    """A hybrid model's constant state is copied per row, so it must count.
+
+    Qwen3.5 keeps ~49 MB of linear-attention state per sequence. Ignoring it would
+    let a 24-row chunk allocate 1.2 GB more than the budget allows.
+    """
+    decider = _decider(memory_budget_gb=1.0)
+    decider.max_fields_per_batch = 32
+    decider._kv_bytes_per_token = 1024                 # ~8 MB per row at 8k tokens
+    decider._kv_constant_bytes_per_row = 0
+    without = decider._auto_chunk_size(8000)
+    decider._kv_constant_bytes_per_row = 49 * 1024 ** 2
+    with_constant = decider._auto_chunk_size(8000)
+    assert with_constant < without
+    assert with_constant >= 1
+
+
+def test_chunk_size_without_a_measurement_uses_max_fields():
+    decider = _decider()
+    decider.max_fields_per_batch = 7
+    decider._kv_bytes_per_token = None
+    decider._kv_constant_bytes_per_row = 0
+    assert decider._auto_chunk_size(5000) == 7
 
 
 def test_a_model_larger_than_the_headroom_does_not_produce_a_negative_budget():

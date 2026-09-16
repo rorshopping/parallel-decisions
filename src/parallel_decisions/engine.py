@@ -184,6 +184,7 @@ class Decider:
         self._model = None
         self._tokenizer = None
         self._kv_bytes_per_token: int | None = None
+        self._kv_constant_bytes_per_row: int = 0
         self._model_bytes: int | None = None
         self._compile_cache: dict[tuple[int, int], list[CompiledField]] = {}
         self._active_fields: dict[str, Field] = {}
@@ -291,36 +292,51 @@ class Decider:
             self.memory_budget_bytes = allowance
 
     def _measure_kv_bytes_per_token(self) -> int | None:
-        """Measure the cache growth per token at two prompt lengths, in bytes.
+        """Measure the cache growth per token across a wide span of prompt lengths.
 
         Deriving this from the model config is a guess that breaks on anything
         unusual: hybrid architectures (Qwen3.5 alternates linear-attention and
         self-attention layers) keep a constant-size state on most layers, so a
-        per-layer KV formula overestimates by a large factor. Measuring the two
-        endpoints removes the constant part and needs no architecture knowledge.
+        per-layer KV formula overestimates by a large factor.
 
-        Raises away any failure: an unmeasurable model falls back to the config
-        estimate rather than failing to load.
+        Measuring needs care in two ways, both learned by getting it wrong:
+
+        - `mlx-lm` preallocates KV buffers in 256-token steps, so short prompts all
+          report the same size. The span must be wide enough to include several steps.
+        - A hybrid model's constant state is tens of megabytes per row; it belongs in
+          the budget but not in the per-token slope, so the slope comes from the
+          largest span measured rather than from the total.
+
+        Returns None (and the caller falls back to the config estimate) when the
+        model cannot be measured.
         """
         from mlx_lm.models.cache import make_prompt_cache
 
         def cache_bytes(n_tokens: int) -> int:
-            toks = [100 + (i % 500) for i in range(n_tokens)]
             cache = make_prompt_cache(self._model)
+            toks = [100 + (i % 500) for i in range(n_tokens)]
             self._model(mx.array([toks], dtype=mx.int32), cache=cache)
-            arrays = list(_cache_arrays(cache))
+            arrays = [value for layer in cache for _, _, value in _cache_slots(layer)]
             mx.eval(*arrays)
             return sum(int(a.nbytes) for a in arrays)
 
-        n1, n2 = 64, 256
-        b1 = cache_bytes(n1)
-        b2 = cache_bytes(n2)
-        per_token = (b2 - b1) / (n2 - n1)
-        if per_token <= 0:
-            return None
-        self._log(f"measured cache growth: {per_token:.0f} bytes per token "
-                  f"({per_token * 1000 / 1024**2:.2f} MB per 1k tokens)")
+        samples = [(n, cache_bytes(n)) for n in (512, 1536, 3072)]
         _clear_mlx_cache()
+        (n_lo, b_lo), (n_hi, b_hi) = samples[0], samples[-1]
+        if b_hi <= b_lo:
+            self._log(f"cache does not grow with prompt length "
+                      f"({b_lo} -> {b_hi} bytes over {n_lo}->{n_hi} tokens); "
+                      f"using the config estimate for chunk sizing")
+            return None
+        per_token = (b_hi - b_lo) / (n_hi - n_lo)
+        constant = max(0.0, b_lo - per_token * n_lo)
+        # The constant is per *sequence*: hybrid models keep tens of megabytes of
+        # linear-attention state that a broadcast row copies too, so chunk sizing
+        # has to account for it or a many-field hybrid run overflows.
+        self._kv_constant_bytes_per_row = int(constant)
+        self._log(f"measured cache: {per_token:.0f} bytes/token "
+                  f"({per_token * 1000 / 1024**2:.2f} MB per 1k tokens) plus a "
+                  f"constant {constant / 1024**2:.1f} MB per row")
         return int(per_token)
 
     # ------------------------------------------------------------------ lock
@@ -369,13 +385,42 @@ class Decider:
     # ------------------------------------------------------------------ cache
     @staticmethod
     def _repeat_cache(cache, n: int):
+        """Broadcast a prompt cache from batch 1 to `n` identical rows.
+
+        Every per-sequence array in the cache must be broadcast, not just
+        keys/values. Hybrid architectures (Qwen3.5 alternates linear-attention and
+        self-attention layers) keep a convolutional state in an `ArraysCache` whose
+        entries are a single sequence's rolling buffer: broadcasting the attention
+        rows without broadcasting that state fails inside the model with
+        `mx.concatenate` of a (1, k, d) state and a (n, s, d) input.
+
+        Arrays whose leading dimension is the batch size are repeated; zero-dim
+        scalars (a KV cache's `offset`) and per-head constants are left alone.
+        """
         out = []
         for layer_cache in cache:
             new_cache = copy.copy(layer_cache)
-            keys = getattr(layer_cache, "keys", None)
-            if keys is not None:
-                new_cache.keys = mx.repeat(keys, n, axis=0)
-                new_cache.values = mx.repeat(layer_cache.values, n, axis=0)
+            for container, index, value in _cache_slots(layer_cache):
+                repeated = _repeat_array(value, n)
+                if repeated is value:
+                    continue
+                if index is None:
+                    setattr(new_cache, container, repeated)
+                else:
+                    # read from new_cache, not layer_cache: a container may hold
+                    # several arrays, and rebuilding from the original each time would
+                    # discard the updates already made to its earlier entries
+                    items = list(getattr(new_cache, container, getattr(layer_cache, container)))
+                    items[index] = repeated
+                    try:
+                        setattr(new_cache, container, items)
+                    except AttributeError:
+                        # a read-only property (some caches expose a view); write
+                        # through the private attribute instead
+                        setattr(new_cache, f"_{container}", items)
+            # a KV cache stores its offset as a scalar and shares it across rows
+            if hasattr(new_cache, "offset"):
+                new_cache.offset = getattr(layer_cache, "offset", 0)
             out.append(new_cache)
         return out
 
@@ -685,9 +730,17 @@ class Decider:
 
     # ------------------------------------------------------------- internals
     def _auto_chunk_size(self, prompt_tokens: int) -> int:
-        if not self._kv_bytes_per_token or prompt_tokens <= 0:
+        """How many decision rows can share one broadcast pass.
+
+        Per row the memory is `prompt_tokens * kv_bytes_per_token` plus a constant
+        per-sequence state (zero for a pure KV model, tens of megabytes for a hybrid
+        one). Both count, because the broadcast copies the whole cache per row.
+        """
+        if prompt_tokens <= 0:
             return self.max_fields_per_batch
-        per_row = self._kv_bytes_per_token * prompt_tokens
+        per_row = (self._kv_constant_bytes_per_row or 0)
+        if self._kv_bytes_per_token:
+            per_row += self._kv_bytes_per_token * prompt_tokens
         if per_row <= 0:
             return self.max_fields_per_batch
         budget_rows = max(1, int(self.memory_budget_bytes // per_row))
@@ -913,32 +966,47 @@ def _copy_cache(cache):
     return out
 
 
-def _cache_arrays(layer_cache: Any) -> Iterable[Any]:
-    """Every array-like attribute of one cache layer.
+def _cache_slots(layer_cache: Any) -> Iterable[tuple[str, int | None, Any]]:
+    """Yield (container, index, array) for the per-sequence arrays a cache stores.
 
-    `mlx-lm` caches vary by architecture: `KVCache` holds `keys`/`values`, hybrid
-    models add constant-size `state`, quantised caches add scales/biases, and some
-    keep a nested list in `cache`. Anything with `nbytes` counts; everything else is
-    ignored, so a new cache class degrades to "not measured" rather than crashing.
+    Only *instance storage* is walked (`vars()`), never properties. `mlx-lm` caches
+    expose views through properties — `KVCache.state` returns a tail slice of
+    keys/values for serialisation — and writing a broadcast through such a view
+    silently replaces the real cache with a truncated copy. Walking `vars()` keeps
+    this correct across cache classes, including ones added later.
     """
     seen: set[int] = set()
-    stack = [layer_cache]
-    while stack:
-        item = stack.pop()
-        if id(item) in seen:
+    for name, value in vars(layer_cache).items():
+        if value is None or name.startswith("_"):
             continue
-        seen.add(id(item))
-        if hasattr(item, "nbytes"):
-            yield item
-            continue
-        for name in ("keys", "values", "state", "cache", "scales", "biases"):
-            value = getattr(item, name, None)
-            if value is None:
-                continue
-            if hasattr(value, "nbytes"):
-                yield value
-            elif isinstance(value, (list, tuple)):
-                stack.extend(value)
+        if hasattr(value, "shape"):
+            if id(value) not in seen:
+                seen.add(id(value))
+                yield name, None, value
+        elif isinstance(value, (list, tuple)):
+            for i, item in enumerate(value):
+                if item is not None and hasattr(item, "shape") and id(item) not in seen:
+                    seen.add(id(item))
+                    yield name, i, item
+
+
+def _repeat_array(value: Any, n: int):
+    """mx.repeat a per-sequence array along the batch axis; return it unchanged
+    when it is not a per-sequence array.
+
+    A failure here is logged rather than silently ignored: a cache array that cannot
+    be broadcast would produce a shape error deep inside the model, or (worse) a
+    wrong-shaped cache, so the caller must be able to see that it happened.
+    """
+    if value is None or not hasattr(value, "shape"):
+        return value
+    if getattr(value, "ndim", 0) < 1:
+        return value                      # a scalar (offset): shared, not per-row
+    if int(value.shape[0]) != 1:
+        return value                      # already batched, or not batch-major
+    if n == 1:
+        return value
+    return mx.repeat(value, n, axis=0)
 
 
 def _physical_ram_bytes() -> int | None:
