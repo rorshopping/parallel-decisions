@@ -191,10 +191,18 @@ class CompiledField:
     def _next_token(tokenizer, suffix: str, suffix_tokens: Sequence[int], answer: str) -> tuple[int, list[int]]:
         """The token the model emits right after `suffix` when the answer is `answer`.
 
-        Read off the real encoding of `suffix + answer` rather than guessing from the
-        answer text: whether the tokenizer attaches a leading space to the answer
-        depends on how it splits the suffix, and getting that wrong shifts every
-        probability in the field. Returns (first token id, remaining tokens).
+        Read off the real encoding of `suffix + answer`, which is correct whenever the
+        tokenizer keeps the suffix intact (`encode(suffix)` is a token-prefix of
+        `encode(suffix + answer)`).
+
+        It usually does not. Every boolean row in the reference evaluation looks like
+        `  "name": ` whose last token is a bare space; re-encoding that together with
+        `true` merges the space into ` true`, a token the model cannot emit because it
+        has already emitted the space. In that case the answer's own first token is the
+        right candidate, which is also what the reference implementation scored. Guessing
+        wrong here re-weights an entire field, so this is pinned by tests.
+
+        Returns (first token id, the tokens of the answer as it would be emitted).
         """
         full = [int(t) for t in tokenizer.encode(suffix + answer, add_special_tokens=False)]
         n = len(suffix_tokens)

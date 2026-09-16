@@ -4,11 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "parallel-decisions"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Typed, locally-run LLM decisions on Apple Silicon (parallel constrained decoding)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
+keywords = ["mlx", "apple-silicon", "llm", "classification", "calibration", "local-first"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "mlx>=0.22",
     "mlx-lm>=0.21",
@@ -16,9 +25,17 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+mcp = ["mcp>=1.0"]
+
+[project.urls]
+Changelog = "https://github.com/rorshopping/parallel-decisions/blob/main/CHANGELOG.md"
+Source = "https://github.com/rorshopping/parallel-decisions"
 
 [project.scripts]
 pd = "parallel_decisions.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "parallel_decisions.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

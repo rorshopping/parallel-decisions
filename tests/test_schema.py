@@ -214,6 +214,68 @@ def test_next_token_falls_back_when_the_boundary_merges():
     assert compiled.candidate_ids[0] == [7]     # the fallback path
 
 
+def test_real_tokenizer_shape_space_already_emitted():
+    """The Qwen shape: the suffix ends with its own space token, so the answer is bare.
+
+    `  "f": ` tokenizes to [..., space]. When you re-encode `  "f": true`, the
+    tokenizer merges the space into ` true` — but the model has already emitted the
+    space, so the token it can legally emit next is the bare `true`. Scoring ` true`
+    here (as an earlier revision did, keeping whichever logit was higher) shifts
+    every probability in the field.
+    """
+    from parallel_decisions.schema import CompiledField
+
+    space, bare_true, space_true, bare_false, space_false = 220, 830, 900, 895, 901
+
+    class _QwenLike:
+        pad_token_id = 0
+        eos_token_id = 0
+
+        def encode(self, text, add_special_tokens=False):
+            # longest-match, the way byte-level BPE behaves
+            if text == '  "f": ':
+                return [90, space]
+            if text == '  "f": true':
+                return [90, space_true]
+            if text == '  "f": false':
+                return [90, space_false]
+            if text == "true":
+                return [bare_true]
+            if text == "false":
+                return [bare_false]
+            return [0]
+
+    compiled = CompiledField.build(Field("f", "boolean", "x", ["true", "false"]), _QwenLike())
+    assert compiled.candidate_ids == [[bare_true], [bare_false]]
+    assert compiled.sequences == [[bare_true], [bare_false]]
+    assert compiled.collision is False
+
+
+def test_enum_candidates_ignore_a_space_that_the_suffix_already_emitted():
+    from parallel_decisions.schema import CompiledField
+
+    class _QwenLikeEnum:
+        pad_token_id = 0
+        eos_token_id = 0
+
+        def encode(self, text, add_special_tokens=False):
+            table = {
+                '  "f": "': [90],
+                '  "f": "AB': [90, 99],      # ' AB' merged
+                '  "f": "AX': [90, 98],      # ' AX' merged
+                "B": [13], "X": [14],
+            }
+            if text in table:
+                return table[text]
+            return [0]
+
+    schema = Schema({"f": {"type": "enum", "choices": ["AB", "AX"], "description": "x"}})
+    compiled = CompiledField.build(schema["f"], _QwenLikeEnum())
+    # suffix {"="} ends with a quote, no trailing space is emitted by the suffix,
+    # so the merged tokens cannot be split; the bare remainders are the candidates
+    assert compiled.candidate_ids == [[13], [14]]
+
+
 def test_multi_field_is_accepted_and_round_trips():
     schema = Schema({
         "actions": {"type": "multi", "choices": ["retry", "escalate", "refund"],

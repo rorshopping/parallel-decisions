@@ -18,6 +18,7 @@ from .calibration import (
 )
 from .config import ConfigError, load_config
 from .engine import DEFAULT_MODEL, Decider
+from .lint import lint_schema
 from .schema import Schema, SchemaError
 
 
@@ -65,19 +66,27 @@ def cmd_validate(args) -> int:
             print(f"  {f.name}: enum, {len(f.choices)} choices")
     if args.check_tokens:
         decider = Decider(model_id=args.model, warmup=False, config=args.config)
-        compiled = schema.compile(decider.tokenizer)
-        collisions = [c for c in compiled if c.collision]
-        rows = len(compiled)
-        if rows != len(schema):
-            print(f"  ({rows} decision rows: multi-select fields expand per choice)")
-        if collisions:
-            print()
-            print(f"token collisions in {len(collisions)} field(s) "
-                  f"(these take an extra, slower pass):")
-            for c in collisions:
-                print(f"  {c.row_name}: {c.field.choices if not c.field.is_boolean else ['true', 'false']}")
-        else:
-            print()
+        report = lint_schema(schema, decider.tokenizer_for_schema)
+        if report.rows != len(schema):
+            print(f"  ({report.rows} decision rows: multi-select fields expand per choice)")
+        print()
+        if report.has_blocking_issues():
+            print("BLOCKING: answers that cannot be distinguished")
+            for finding in report.blocking:
+                print(f"  {finding.name}: {finding.detail}")
+                for suggestion in finding.suggestions:
+                    print(f"      {suggestion}")
+        if report.collisions:
+            print(f"token collisions in {len(report.collisions)} field(s): "
+                  f"these cost an extra sequence-scoring pass "
+                  f"(correct, but slower, and their confidence comes from full-sequence "
+                  f"log-probabilities)")
+            for finding in report.collisions:
+                groups = "; ".join(" / ".join(g) for g in finding.groups)
+                print(f"  {finding.name}: shares a first token across [{groups}]")
+                for suggestion in finding.suggestions:
+                    print(f"      rename: {suggestion}")
+        if not report.fields:
             print("no token collisions")
     return 0
 

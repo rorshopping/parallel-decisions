@@ -27,15 +27,35 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
-import mlx.core as mx
-
 from .calibration import Calibrator
 from .config import Config, load_config
 from .prompts import build_prompt
 from .schema import CompiledField, Field, Schema
 
+
+class _LazyMLX:
+    """Import mlx on first attribute access.
+
+    Everything that does not need the GPU — schema validation, calibration fitting,
+    the lint, `pd config` — must work on a machine without MLX installed. Importing
+    it at module scope made `import parallel_decisions` fail there, which is a bad
+    failure mode for a library whose helpers are useful without a model.
+    """
+
+    _module: Any = None
+
+    def __getattr__(self, name: str) -> Any:
+        if _LazyMLX._module is None:
+            import mlx.core as mx
+            _LazyMLX._module = mx
+        return getattr(_LazyMLX._module, name)
+
+
+mx = _LazyMLX()
+
 DEFAULT_MODEL = "mlx-community/Qwen2.5-7B-Instruct-4bit"
 DEFAULT_MEMORY_BUDGET_GB = 6.0
+MEMORY_HEADROOM = 0.65      # model + KV broadcast may use at most this share of RAM
 DEFAULT_MAX_FIELDS = 32
 DEFAULT_MAX_COLLISION_ROWS = 8
 
@@ -171,6 +191,26 @@ class Decider:
         if self.verbose:
             print(f"[parallel-decisions] {message}", flush=True)
 
+    def load_tokenizer(self) -> "Decider":
+        """Load the tokenizer alone, for schema compilation and lints.
+
+        `pd validate --check-tokens` and the MCP lint tool only need to tokenize, so
+        they must not pull a multi-gigabyte model into memory. Older `mlx-lm` has no
+        tokenizer-only entry point; falling back to `load()` is correct, just heavier.
+        """
+        if self._tokenizer is None:
+            self._check_platform()
+            t0 = time.perf_counter()
+            try:
+                from mlx_lm.utils import load_tokenizer
+            except ImportError:  # pragma: no cover - older mlx-lm
+                self.load()
+                return self
+            self._tokenizer = load_tokenizer(self.model_id)
+            self._log(f"tokenizer loaded in {time.perf_counter() - t0:.1f}s "
+                      f"({self.model_id})")
+        return self
+
     def log_event(self, event: str, **fields: Any) -> None:
         """Structured telemetry: one JSON line on stderr when PD_LOG=json."""
         if self.log_mode not in ("json", "1", "true", "yes", "on"):
@@ -207,12 +247,38 @@ class Decider:
         elapsed = time.perf_counter() - t0
         self._log(f"loaded in {elapsed:.1f}s "
                   f"(kv/token ~{self._kv_bytes_per_token or 0} bytes)")
+        self._clamp_memory_budget()
         self.log_event("load", seconds=round(elapsed, 3),
                        kv_bytes_per_token=self._kv_bytes_per_token,
                        model_bytes=self._model_bytes,
+                       memory_budget_bytes=self.memory_budget_bytes,
                        config=self.config.source)
         if self.warmup:
             self._warmup()
+
+    def _clamp_memory_budget(self) -> None:
+        """Keep the model plus its KV broadcast below a share of physical RAM.
+
+        Field rows are broadcast copies of the whole cache, so an over-optimistic
+        budget does not fail cleanly — macOS swaps, and a 16 GB machine that swaps
+        during a 38k-token prefill runs several times slower than one that chunks
+        more. Measured on an M5 Air: a 7 GB budget on a 4 GB model with 38k-token
+        prompts pushed swap to 15 GB and stalled a 48-row case for 13+ minutes.
+        """
+        ram = _physical_ram_bytes()
+        if not ram or not self._model_bytes:
+            return
+        allowance = int(ram * MEMORY_HEADROOM) - self._model_bytes
+        if allowance <= 0:
+            self._log("model alone exceeds the RAM headroom; leaving budget unchanged")
+            return
+        if self.memory_budget_bytes > allowance:
+            self._log(f"memory budget {self.memory_budget_bytes / 1024**3:.1f} GB "
+                      f"exceeds the safe allowance "
+                      f"({allowance / 1024**3:.1f} GB of {ram / 1024**3:.0f} GB RAM "
+                      f"minus {self._model_bytes / 1024**3:.1f} GB of weights); "
+                      f"clamping to avoid swapping")
+            self.memory_budget_bytes = allowance
 
     # ------------------------------------------------------------------ lock
     def _acquire_lock(self, what: str):
@@ -230,7 +296,19 @@ class Decider:
 
     @property
     def tokenizer(self):
+        """The tokenizer, loading the model if it is not already loaded.
+
+        `load()` needs the real tokenizer that came with the weights; using a
+        separately loaded one risks a mismatch, so the model load wins here.
+        """
         return self.load()._tokenizer
+
+    @property
+    def tokenizer_for_schema(self):
+        """Tokenizer for schema compilation and lints: no model load."""
+        if self._tokenizer is None:
+            self.load_tokenizer()
+        return self._tokenizer
 
     def _warmup(self) -> None:
         """Compile the Metal shaders with a tiny prefill + broadcast."""
@@ -583,6 +661,18 @@ def _coerce_calibrator(value: "str | Calibrator | Mapping[str, Any] | None") -> 
     if isinstance(value, (str, bytes)) or hasattr(value, "__fspath__"):
         return Calibrator.from_json(str(value))
     raise TypeError(f"calibration must be a path, dict or Calibrator, got {type(value).__name__}")
+
+
+def _physical_ram_bytes() -> int | None:
+    """Total physical memory, or None if the platform does not report it."""
+    try:
+        pages = os.sysconf("SC_PHYS_PAGES")
+        size = os.sysconf("SC_PAGE_SIZE")
+        if pages > 0 and size > 0:
+            return int(pages) * int(size)
+    except (AttributeError, ValueError, OSError):
+        pass
+    return None
 
 
 def _estimate_model_bytes(model) -> int | None:
