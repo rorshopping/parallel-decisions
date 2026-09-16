@@ -1,0 +1,27 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "torch": "2.6.0+cu124",
+  "transformers": "5.17.0",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "gpu": "NVIDIA GeForce RTX 2060 SUPER",
+  "dtype": "torch.float16",
+  "runs": 10,
+  "workloads": {
+    "synthetic_8": {
+      "status": "graph_unavailable",
+      "fields": 8,
+      "decision_rows": 8,
+      "capture_ms": 0.29400000130408444,
+      "free_bytes": 0,
+      "reason": "ValueError: graph shape exceeds 2 GiB or half of free VRAM: kv_bytes=38436864, attention_bytes=22421504, logits_bytes=34033664, estimated_bytes=201396224, free_bytes=0"
+    },
+    "synthetic_27": {
+      "status": "graph_unavailable",
+      "fields": 27,
+      "decision_rows": 27,
+      "capture_ms": 0.23370000053546391,
+      "free_bytes": 0,
+      "reason": "ValueError: graph shape exceeds 2 GiB or half of free VRAM: kv_bytes=342392832, attention_bytes=199729152, logits_bytes=131272704, estimated_bytes=1278332928, free_bytes=0"
+    }
+  }
+}

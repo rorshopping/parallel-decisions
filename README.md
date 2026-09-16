@@ -5,7 +5,14 @@ schema of questions; get back typed answers with probabilities — as one batche
 forward pass, with JSON that cannot be malformed.
 
 Built on the "parallel constrained decoding" idea behind Jev / TypeSafe AI, packaged
-as a clean, dependency-light library for Apple Silicon.
+as a local library with an MLX path for Apple Silicon and a Torch path for CUDA/CPU.
+
+**Windows/NVIDIA users: start with [GPU_SETUP.md](GPU_SETUP.md)** for installation,
+explicit model/config choices and an explanation of CPU vs CUDA vs CUDA Graphs.
+On the RTX 2060 SUPER, warmed graph replay reduced median request latency from
+60.1 to 51.8 ms on one 8-field workload, and 240.9 to 83.8 ms on a custom 27-field
+workload. These are separate measurements, not a universal multiplier or a claim
+that browser clicks themselves became faster.
 
 ```python
 from parallel_decisions import Decider, Schema
@@ -25,7 +32,7 @@ result["category"].probability # 0.94  (calibrated, if a calibrator is loaded)
 print(result.json())           # {"category": "billing", "priority": "P2", "needs_human": true}
 ```
 
-Two commands to a working call:
+Two commands to a working call on Apple Silicon (Windows: see the GPU guide above):
 
 ```bash
 uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
@@ -37,10 +44,10 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
 
 - **Typed by construction.** The model never writes JSON. Field values are selected
   from allowed answers and assembled in code, so keys and types are always valid.
-- **One pass for all questions.** The context is prefilled once; every field is
-  evaluated in a single batched forward pass. Adding fields adds little latency.
-- **Local and free.** Runs on Apple Silicon with MLX. No API keys, no network
-  after the model download.
+- **Batched questions.** The context is prefilled once; decision rows are evaluated
+  in batched passes. Extra fields, chunking and colliding answers can add time and memory.
+- **Local and free.** Runs on Apple Silicon with MLX or CUDA/CPU with Torch. No API
+  keys are required; inference can run offline once model assets are cached.
 - **Calibratable probabilities.** Each answer carries a softmax over its allowed
   choices. That is a ranking signal, not a probability of being right — the
   calibrator (`pd calibrate`) turns it into one you can threshold on, with the
@@ -80,9 +87,11 @@ uv pip install --python .venv/bin/python -e ".[dev]"
 python3.12 -m venv .venv && .venv/bin/pip install -e .
 ```
 
-First run downloads the model (~4.3 GB) from Hugging Face. Apple Silicon (arm64)
-is the supported platform; on anything else you get a clear error rather than a
-crash (`PD_ALLOW_NON_ARM=1` to try anyway).
+These installation commands are for Apple Silicon/MLX; its default 7B 4-bit
+model download is about 4.3 GB. Windows/NVIDIA installation is documented in
+[GPU_SETUP.md](GPU_SETUP.md#windows-installation-explicit-reproducible-route).
+Backend auto-selection uses Torch off Apple Silicon, but on Torch you must set a
+compatible model ID explicitly rather than use the MLX default.
 
 ## Python API
 
@@ -238,30 +247,30 @@ project and integrated here on top of the package's schema, collision and
 calibration machinery). With `backend = "auto"` (the default) an Apple Silicon
 Mac uses MLX; everything else uses torch with CUDA when available.
 
-Install the extra dependencies on a GPU/CPU machine:
-
-```bash
-uv pip install torch --index-url https://download.pytorch.org/whl/cu124   # CUDA build; plain 'torch' for CPU
-uv pip install "transformers>=4.40" accelerate
-```
+Use the explicit Windows dependency installation in [GPU_SETUP.md](GPU_SETUP.md).
+The current package metadata still declares MLX unconditionally and does not
+install Torch automatically; that guide avoids installing an unusable MLX runtime.
 
 ```python
 from parallel_decisions import Decider
 
-decider = Decider(backend="torch")                 # or backend="mlx"
+decider = Decider(model_id="Qwen/Qwen2.5-0.5B-Instruct", backend="torch",
+                  torch_device="cuda", torch_dtype="float16")
 result = decider.decide("wire transfer to Cyprus...", schema)
 result.telemetry["device"]                         # "cuda"
 ```
 
 Notes on the torch backend:
 
-- Candidate scoring, collision resolution, multi-select and calibration are the
-  same code paths' semantics as MLX; results match up to float reassociation.
-- Weights load in bf16 on CUDA (fp32 on CPU). An 8 GB card fits Qwen2.5-7B
-  (fp16/bf16 weights + broadcast KV) only for short contexts; the 0.5B–1.5B class
-  is the comfortable target, and `torch_device = "cpu"` always works.
-- `memory_budget_gb` clamps chunking on this backend too (via `psutil` when RAM
-  cannot be probed), so oversized schemas chunk instead of OOMing.
+- The backends share schema/collision/calibration concepts, not a cross-backend
+  accuracy guarantee. Different precision and batching can change near-tied answers.
+- Auto dtype uses bf16 when reported available, otherwise fp16 on CUDA; CPU uses
+  fp32. Explicit fp16 is the measured starting point for this RTX 2060 SUPER.
+  Unquantized 7B fp16 weights alone need roughly 14 GB, so do **not** fit 8 GB VRAM.
+  This Torch loader has no exposed 4-bit option; start with 0.5B and measure memory.
+- Torch currently chunks by `max_fields_per_batch`; the MLX adaptive memory-budget
+  logic is not wired into Torch. Lower the row limit for long contexts. Graph
+  capture has its own conservative VRAM guard, but eager inference can still OOM.
 - The upstream reference for this port is `core/engine_torch.py` in
   [harshatheg/Qwen-2.5-1B-RLCD](https://huggingface.co/harshatheg/Qwen-2.5-1B-RLCD)
   (Apache-2.0), added 2026-09-16 (commit `031d1a8`, "dual MLX/PyTorch engine
@@ -316,18 +325,18 @@ fresh copies, safe to keep across later replays. Any capture or replay failure
 permanently falls back to the normal eager path for that runtime with one logged
 warning, and off by default everywhere. It is ignored on CPU and with MLX.
 
-Be honest about what this buys: CUDA graphs remove per-kernel launch overhead,
-not GPU work. On one RTX 2060 SUPER with Qwen2.5-0.5B fp16 and a synthetic
-8-boolean-field schema, 10 synchronized eager/graph pairs: suffix pass
-24.0 → 15.1 ms p50, total 60.0 → 52.0 ms p50 (1.16×); the eager prefix itself
-costs ~200 ms to capture plus warmup and is reported separately. The 27-row
-workload from the same probe could not be captured on that run: 6.5 of 8 GiB VRAM
-was already in use by other desktop applications, and graphs are refused before
-capture when free VRAM is under twice a shape's estimated working set (~192 MiB
-for that shape). Graphs help most when many calls repeat the same shape on a
-quiet GPU (a worker loop over one schema); a single interactive call pays capture
-and may gain little. VRAM cost is the static KV and output buffers per captured
-shape; up to 4 shapes are kept. Requires a full-attention Qwen2-family model in
+CUDA graphs reduce per-kernel launch overhead, not the required GPU math. On an
+RTX 2060 SUPER with Qwen2.5-0.5B fp16, the recorded 8-field run gives suffix
+**24.1 → 16.0 ms** and total **60.1 → 51.8 ms** p50 (1.16×, 10 pairs). A later
+custom 27-field run gives total **240.9 → 83.8 ms** p50 (2.88×, 6 pairs).
+Capture costs about **187 / 283 ms** respectively, separately from these warmed
+measurements; prefill is not captured. The original synthetic 27-row attempt
+was refused for memory pressure and remains recorded as unavailable, not replaced
+by the later custom result. Capture estimates above 2 GiB or half free VRAM are
+refused; this is a heuristic rather than a memory guarantee. Graphs help repeated
+shapes in a long-lived process, not necessarily a one-off CLI invocation. Static
+KV/output buffers consume extra VRAM per shape; up to 4 shapes are kept.
+See [GPU_SETUP.md](GPU_SETUP.md) for raw evidence links, startup costs and limits. Requires a full-attention Qwen2-family model in
 eval mode (eager or SDPA attention); other architectures or attention backends
 fall back to eager. Run
 `python scripts/measure_cuda_graph.py --output cuda-graph-results.json` to record

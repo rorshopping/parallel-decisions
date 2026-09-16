@@ -11,7 +11,68 @@ decoding" prototype, with the best-performing local model we measured
 (Qwen2.5-7B-Instruct-4bit, 73.8% agreement on TypeSafe's public eval suite), plus
 confidence calibration so the probabilities can be thresholded.
 
-Read `README.md` first for the user-facing API. This file is about modifying the code.
+Read `README.md` and `GPU_SETUP.md` first for the user-facing API and Windows
+setup. This file is about modifying the code. The project now also has a Torch
+CUDA/CPU backend, shared-prefix reuse and opt-in StaticCache CUDA Graph replay.
+The older MLX accuracy numbers below do not describe the 0.5B CUDA latency model.
+
+## Windows / CUDA handoff (2026-09-17)
+
+- Release checkout: `C:\Users\Richard\Documents\Projects\parallel-decisions`.
+- Research mirror: sibling `jev-on-a-laptop`; private research: `rlcd-research`;
+  HF source reference: `rlcd-upstream`.
+- Reusable environment currently lives at
+  `C:\Users\Richard\Documents\Projects\parallel-decisions_wt\gpu\.venv`.
+  It is an editable install pointing at that worktree, NOT whichever checkout
+  happens to be the shell working directory. Always pin and print the import path:
+
+```powershell
+$env:PYTHONPATH = "C:\Users\Richard\Documents\Projects\parallel-decisions\src"
+$py = "C:\Users\Richard\Documents\Projects\parallel-decisions_wt\gpu\.venv\Scripts\python.exe"
+& $py -c "import parallel_decisions.engine_torch as m; print(m.__file__)"
+& $py -m pytest -q
+exit $LASTEXITCODE
+```
+
+Set `PYTHONPATH` to **your** worktree's `src` when working in isolation. Do not
+reinstall the shared venv against a different worktree while another agent uses it.
+PowerShell commands may print harmless stderr warnings as error records; inspect
+`$LASTEXITCODE` immediately after Python. Do not truncate failing tracebacks or use
+`cmd /c "... & echo %ERRORLEVEL%"` (expansion can report a stale exit status).
+The latest documented suite is 149 passed / 3 skipped on this CUDA machine; counts
+vary with optional dependencies and hardware. A pass using another checkout is
+not verification of your changes.
+
+### Torch-specific implementation invariants
+
+- `engine_torch.py`: `TorchRuntime`, `prepare_torch`, `decide_torch`,
+  `TorchCudaGraphCache`; facade/config plumbing remains in `engine.py` / `config.py`.
+- `prepare`/use/release share the model lock. Verify actual full-tokenization prefix
+  IDs per context; slice the remainder from full tokenization to avoid double BOS.
+- Never shallow-copy only a cache wrapper: HF layer updates can mutate the caller's
+  cache. Plain `DynamicLayer` can share immutable tensor contents with copied layer
+  objects; unknown mutable-state layouts require conservative isolation. Test
+  repeated use, a singleton row, collisions and chunks with changed context.
+- Graphs are off by default (`cuda_graph`, `PD_CUDA_GRAPH`). Prefill stays eager;
+  repeated suffix shapes use StaticCache and staged lengths/positions/masks/KV.
+  Stage fresh inputs before every replay, clone outputs, and test changed lengths
+  within the same bucket. Tests live in `test_cuda_graph.py` / `test_torch_prefix.py`.
+- Graph capture supports Qwen2 full attention (eval, eager/SDPA), at most four
+  shapes. Failures disable graphs for the runtime and record `disable_reason`.
+  Respect the VRAM guard; do not kill the user's desktop/ASR processes to benchmark.
+- CUDA timings must synchronize. Separate download/load, warmup, capture,
+  preparation, prefill, suffix and total request time. Compare matching schemas,
+  dtype, model and lengths, alternate paired order, preserve raw JSON. Do not
+  multiply speedups from different workloads or claim browser-click speedups from
+  HTTP requests plus DOM updates. `GPU_SETUP.md` is the evidence index.
+- Current limitations: Torch dependencies are not declared as an install extra;
+  `Decider` retains an MLX default model ID even off Mac; Torch fixed-row chunking
+  does not use MLX's adaptive memory budget. Document these, don't silently imply
+  they are fixed. Explicit model/device/fp16 settings are used in the GPU guide.
+- A 7B fp16 model does not fit 8 GB VRAM. The tested latency model is 0.5B;
+  fp16 is the starting point on this Turing GPU, not auto-selected bf16.
+
+The original sections below describe the MLX architecture unless stated otherwise.
 
 ## Architecture in one screen
 
