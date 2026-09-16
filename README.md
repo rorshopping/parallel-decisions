@@ -101,6 +101,10 @@ schema = Schema({
 Supported field types: `boolean`, `enum` (2–255 choices) and `multi` (any subset of
 the choices). Free text and numbers are not supported by the decoding method.
 
+Works with hybrid architectures too: the memory budget accounts for the constant
+per-sequence state that linear-attention layers keep (Qwen3.5), and the KV broadcast
+repeats every per-sequence array rather than only keys/values.
+
 Answers can carry their definitions, which measurably helps the model — this is the
 single highest-leverage thing you can do to a schema:
 
@@ -258,8 +262,12 @@ Swap the model per use case:
 
 | model id | notes |
 |---|---|
-| `mlx-community/Qwen2.5-7B-Instruct-4bit` | default, best measured accuracy (73.8%) |
+| `mlx-community/Qwen2.5-7B-Instruct-4bit` | default, best measured accuracy (73.8% recorded / 70.8% on the packaged path over 277 slots) |
 | `mlx-community/Qwen2.5-1.5B-Instruct-4bit` | ~4x faster, noticeably weaker decisions |
+| `mlx-community/Qwen3.5-4B-OptiQ-4bit` | runs (hybrid linear attention, ~3 GB, constant 49 MB per row); accuracy not yet measured against the eval |
+
+The model must be a causal LM that `mlx-lm` can load. Any quantisation works; a 4-bit
+7B is the measured sweet spot for a 16 GB machine.
 
 ## CLI
 
