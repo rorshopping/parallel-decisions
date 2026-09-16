@@ -1,0 +1,32 @@
+{
+  "fields": [
+    {
+      "name": "is_fraudulent",
+      "type": "boolean",
+      "description": "Whether this transaction is fraudulent given the evidence"
+    },
+    {
+      "name": "risk_tier",
+      "type": "enum",
+      "description": "Overall risk tier",
+      "choices": {
+        "LOW": "normal behaviour, known device and location",
+        "MEDIUM": "one weak anomaly",
+        "HIGH": "multiple anomalies or a high-value transfer",
+        "CRITICAL": "active account takeover or confirmed attacker control"
+      }
+    },
+    {
+      "name": "recommended_action",
+      "type": "enum",
+      "description": "Immediate mitigation step",
+      "choices": {
+        "APPROVE": "let it through",
+        "CHALLENGE_2FA": "step-up authentication",
+        "MANUAL_REVIEW": "queue for a human",
+        "BLOCK_TRANSACTION": "stop this payment",
+        "FREEZE_ACCOUNT": "freeze the account itself"
+      }
+    }
+  ]
+}

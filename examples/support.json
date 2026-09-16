@@ -1,0 +1,26 @@
+{
+  "fields": [
+    {
+      "name": "category",
+      "type": "enum",
+      "description": "Primary support category",
+      "choices": {
+        "BILLING": "charges, invoices, refunds",
+        "TECHNICAL": "bugs, outages, integration problems",
+        "ACCOUNT": "login, access, profile, security",
+        "SHIPPING": "delivery, tracking, returns"
+      }
+    },
+    {
+      "name": "priority",
+      "type": "enum",
+      "description": "Urgency tier",
+      "choices": ["P1", "P2", "P3"]
+    },
+    {
+      "name": "needs_human",
+      "type": "boolean",
+      "description": "Whether a person must look at this instead of an automatic reply"
+    }
+  ]
+}
