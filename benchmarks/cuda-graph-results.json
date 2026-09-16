@@ -1,0 +1,1196 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "torch": "2.6.0+cu124",
+  "transformers": "5.17.0",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "gpu": "NVIDIA GeForce RTX 2060 SUPER",
+  "dtype": "torch.float16",
+  "runs": 10,
+  "workloads": {
+    "synthetic_8": {
+      "fields": 8,
+      "decision_rows": 8,
+      "context": "Ticket: customer cannot log in, reset email not arriving.",
+      "schema_source": "synthetic",
+      "capture_ms": 187.32950000048731,
+      "graph_shapes": [
+        [
+          8,
+          7,
+          384
+        ]
+      ],
+      "replays": 12,
+      "persistent_allocated_mib": 1023.8193359375,
+      "peak_allocated_mib": 1113.794921875,
+      "all_answers_equal": true,
+      "max_probability_error": 0.0,
+      "summary_ms": {
+        "eager": {
+          "prefill_ms": {
+            "mean": 35.417169999891485,
+            "p50": 34.98994999972638,
+            "p95": 38.00918999950227
+          },
+          "suffix_ms": {
+            "mean": 25.550929999371874,
+            "p50": 24.136499999258376,
+            "p95": 32.510584998544786
+          },
+          "total_ms": {
+            "mean": 61.68081000032544,
+            "p50": 60.09595000068657,
+            "p95": 69.20884000064687
+          }
+        },
+        "graph": {
+          "prefill_ms": {
+            "mean": 35.215640000205894,
+            "p50": 35.23919999952341,
+            "p95": 37.03602500017951
+          },
+          "suffix_ms": {
+            "mean": 15.985629999704543,
+            "p50": 16.027849999773025,
+            "p95": 16.628874999787513
+          },
+          "total_ms": {
+            "mean": 51.9317599997521,
+            "p50": 51.849399999809975,
+            "p95": 54.13454500003354
+          }
+        }
+      },
+      "total_p50_speedup": 1.1590481278646776,
+      "rows": [
+        {
+          "eager": {
+            "total_ms": 63.655100000687526,
+            "prefill_ms": 36.86089999973774,
+            "suffix_ms": 26.06709999963641,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "graph": {
+            "total_ms": 54.5853999992687,
+            "prefill_ms": 37.68830000080925,
+            "suffix_ms": 15.95189999898139,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "graph": {
+            "total_ms": 52.194099998814636,
+            "prefill_ms": 34.79500000139524,
+            "suffix_ms": 16.588700000284007,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "eager": {
+            "total_ms": 73.25200000013865,
+            "prefill_ms": 34.73630000007688,
+            "suffix_ms": 37.65169999860518,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "eager": {
+            "total_ms": 64.26720000126807,
+            "prefill_ms": 38.94869999930961,
+            "suffix_ms": 24.46609999969951,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "graph": {
+            "total_ms": 51.83699999906821,
+            "prefill_ms": 35.306499999933294,
+            "suffix_ms": 15.811699999176199,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "graph": {
+            "total_ms": 50.616900000022724,
+            "prefill_ms": 33.970600001339335,
+            "suffix_ms": 16.03630000136036,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "eager": {
+            "total_ms": 58.549999999740976,
+            "prefill_ms": 34.09349999856204,
+            "suffix_ms": 23.806899998817244,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "eager": {
+            "total_ms": 58.9163999993616,
+            "prefill_ms": 34.974800000782125,
+            "suffix_ms": 23.26109999921755,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "graph": {
+            "total_ms": 51.131999998688116,
+            "prefill_ms": 33.891099999891594,
+            "suffix_ms": 16.613199999483186,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "graph": {
+            "total_ms": 50.568500000736094,
+            "prefill_ms": 35.36369999892486,
+            "suffix_ms": 14.234299998861388,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "eager": {
+            "total_ms": 60.299500000837725,
+            "prefill_ms": 35.652500000651344,
+            "suffix_ms": 23.758899998938432,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "eager": {
+            "total_ms": 57.555499999580206,
+            "prefill_ms": 35.00509999867063,
+            "suffix_ms": 21.86239999900863,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "graph": {
+            "total_ms": 51.86180000055174,
+            "prefill_ms": 35.18110000004526,
+            "suffix_ms": 16.022699999666656,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "graph": {
+            "total_ms": 51.86359999970591,
+            "prefill_ms": 35.29729999900155,
+            "suffix_ms": 15.92279999931634,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "eager": {
+            "total_ms": 59.213100001215935,
+            "prefill_ms": 35.07560000070953,
+            "suffix_ms": 23.557500000606524,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "eager": {
+            "total_ms": 61.206899999888265,
+            "prefill_ms": 34.38629999982368,
+            "suffix_ms": 26.226999998471,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "graph": {
+            "total_ms": 51.07479999969655,
+            "prefill_ms": 34.42400000130874,
+            "suffix_ms": 16.032999999879394,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        },
+        {
+          "graph": {
+            "total_ms": 53.58350000096834,
+            "prefill_ms": 36.23879999940982,
+            "suffix_ms": 16.641700000036508,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "eager": {
+            "total_ms": 59.89240000053542,
+            "prefill_ms": 34.43800000059127,
+            "suffix_ms": 24.85060000071826,
+            "values": {
+              "check_0": false,
+              "check_1": false,
+              "check_2": true,
+              "check_3": true,
+              "check_4": true,
+              "check_5": true,
+              "check_6": true,
+              "check_7": true
+            },
+            "distributions": {
+              "check_0": {
+                "true": 0.0838903859257698,
+                "false": 0.9161096215248108
+              },
+              "check_1": {
+                "true": 0.2458084672689438,
+                "false": 0.7541915774345398
+              },
+              "check_2": {
+                "true": 0.6160122752189636,
+                "false": 0.38398775458335876
+              },
+              "check_3": {
+                "true": 0.722527027130127,
+                "false": 0.27747300267219543
+              },
+              "check_4": {
+                "true": 0.7892336845397949,
+                "false": 0.21076631546020508
+              },
+              "check_5": {
+                "true": 0.7799928784370422,
+                "false": 0.22000709176063538
+              },
+              "check_6": {
+                "true": 0.873214840888977,
+                "false": 0.12678517401218414
+              },
+              "check_7": {
+                "true": 0.793105959892273,
+                "false": 0.20689405500888824
+              }
+            },
+            "telemetry": {
+              "device": "cuda",
+              "backend": "torch",
+              "prompt_tokens": 295
+            }
+          },
+          "same_answers": true,
+          "max_probability_error": 0.0
+        }
+      ]
+    },
+    "synthetic_27": {
+      "status": "graph_unavailable",
+      "fields": 27,
+      "decision_rows": 27,
+      "capture_ms": 0.22139999964565504,
+      "free_bytes": 0
+    }
+  }
+}

@@ -127,8 +127,17 @@ class TorchCudaGraphCache:
         kv_bytes = sum((l.keys.numel() + l.values.numel()) * l.keys.element_size()
                        for l in cache.layers) * n * (bucket + suffix_len) / max(1, cache.get_seq_length())
         logits_bytes = n * suffix_len * config.vocab_size * 4
-        if kv_bytes * (2 + config.num_attention_heads / config.num_key_value_heads) + logits_bytes * 3 > 512 * 1024**2:
-            raise ValueError("graph shape exceeds the 512 MiB estimated working-set limit")
+        # Attention expands KV one layer at a time, not all layers concurrently.
+        attention_bytes = kv_bytes / len(cache.layers) * (
+            2 * config.num_attention_heads / config.num_key_value_heads)
+        estimated_bytes = kv_bytes * 2 + attention_bytes + logits_bytes * 3
+        free_bytes, _ = torch.cuda.mem_get_info(rt.device)
+        if estimated_bytes > min(2 * 1024**3, free_bytes // 2):
+            raise ValueError(
+                f"graph shape exceeds 2 GiB or half of free VRAM: "
+                f"kv_bytes={kv_bytes:.0f}, attention_bytes={attention_bytes:.0f}, "
+                f"logits_bytes={logits_bytes}, estimated_bytes={estimated_bytes:.0f}, "
+                f"free_bytes={free_bytes}")
         entry = {
             "cache": static,
             "tokens": torch.empty((n, suffix_len), dtype=torch.long, device=rt.device),

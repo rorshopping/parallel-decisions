@@ -29,6 +29,11 @@ The torch backend: the same parallel constrained decoding on NVIDIA GPUs and CPU
   replacing the hard non-arm64 failure with a working backend.
 - Windows support for the pure-Python surface: `_physical_ram_bytes()` now uses
   `GlobalMemoryStatusEx`, so memory clamping and the test suite work off macOS.
+- **Experimental CUDA graph replay for the torch backend** (`cuda_graph` in
+  `pd.toml`, `PD_CUDA_GRAPH`, off by default): repeated suffix passes with stable
+  shapes are captured once (StaticCache, eager prefill outside the graph) and
+  replayed with fresh staged inputs; any capture/replay failure falls back
+  permanently to the eager path. Off by default; helps shape-stable workloads.
 
 ### Changed
 

@@ -226,6 +226,7 @@ log = "json"                  # one JSON line per call on stderr
 backend = "auto"              # "auto" | "mlx" | "torch" — see "NVIDIA GPU / CPU (torch backend)"
 torch_dtype = "bfloat16"      # torch backend only: bfloat16 | float16 | float32
 torch_device = "cuda"         # torch backend only: "cuda" | "cpu" (default: auto-detect)
+cuda_graph = false            # torch backend only: replay repeated suffix passes as one CUDA graph
 ```
 
 ### NVIDIA GPU / CPU (torch backend)
@@ -302,6 +303,35 @@ Low-precision reassociation can change probabilities and near-tied decisions.
 Run `python scripts/measure_prefix_speedup.py --output prefix-results.json` to
 record raw paired measurements. CUDA timers now synchronize the device and
 `pass_ms` includes collision scoring, unlike older asynchronous phase timings.
+
+### CUDA graphs for repeated suffix passes (torch backend, experimental)
+
+`cuda_graph = true` (or `PD_CUDA_GRAPH=1`) makes the torch backend capture a
+repeated, shape-stable suffix pass into a CUDA graph and replay it: the first call
+at a given (rows, suffix length, prefix-length bucket) shape stays eager, the
+second captures, and later calls copy fresh suffix tokens and prompt KV values
+into static buffers and replay the captured pass. The prefill is never captured,
+so prompts and shared-prefix extension stay eager, and the returned tensors are
+fresh copies, safe to keep across later replays. Any capture or replay failure
+permanently falls back to the normal eager path for that runtime with one logged
+warning, and off by default everywhere. It is ignored on CPU and with MLX.
+
+Be honest about what this buys: CUDA graphs remove per-kernel launch overhead,
+not GPU work. On one RTX 2060 SUPER with Qwen2.5-0.5B fp16 and a synthetic
+8-boolean-field schema, 10 synchronized eager/graph pairs: suffix pass
+24.0 → 15.1 ms p50, total 60.0 → 52.0 ms p50 (1.16×); the eager prefix itself
+costs ~200 ms to capture plus warmup and is reported separately. The 27-row
+workload from the same probe could not be captured on that run: 6.5 of 8 GiB VRAM
+was already in use by other desktop applications, and graphs are refused before
+capture when free VRAM is under twice a shape's estimated working set (~192 MiB
+for that shape). Graphs help most when many calls repeat the same shape on a
+quiet GPU (a worker loop over one schema); a single interactive call pays capture
+and may gain little. VRAM cost is the static KV and output buffers per captured
+shape; up to 4 shapes are kept. Requires a full-attention Qwen2-family model in
+eval mode (eager or SDPA attention); other architectures or attention backends
+fall back to eager. Run
+`python scripts/measure_cuda_graph.py --output cuda-graph-results.json` to record
+raw paired measurements on your own model and schema.
 
 ### Observability
 

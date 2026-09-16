@@ -20,6 +20,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--model', default='Qwen/Qwen2.5-0.5B-Instruct')
     parser.add_argument('--runs', type=int, default=10)
+    parser.add_argument('--cuda-graph', action='store_true', default=None)
     args = parser.parse_args()
     if args.runs < 2:
         parser.error('--runs must be at least 2')
@@ -39,7 +40,7 @@ def main():
         'Export job stuck at 80 percent for two hours.',
     ]
     d = Decider(args.model, backend='torch', torch_device='cuda',
-                torch_dtype='float16', max_fields_per_batch=8)
+                torch_dtype='float16', max_fields_per_batch=8, cuda_graph=args.cuda_graph)
     d.load()
     rt = d._torch_rt
     rt.synchronize()
@@ -51,6 +52,14 @@ def main():
     original_length = prefix.cache.get_seq_length()
     d.decide(contexts[0], schema)
     d.decide_with_prefix(prefix, contexts[0])
+    if rt.cuda_graph:
+        # Prime each shape outside measured pairs (including varying context lengths).
+        for context in contexts:
+            d.decide(context, schema)
+            d.decide_with_prefix(prefix, context)
+        if rt.graph_cache.disabled or not rt.graph_cache.entries:
+            raise RuntimeError('CUDA graphs requested but capture failed')
+    capture_ms = rt.graph_cache.capture_ms
     rows = []
     try:
         for i in range(args.runs):
@@ -82,6 +91,13 @@ def main():
         'platform': platform.platform(), 'gpu': torch.cuda.get_device_name(),
         'dtype': str(rt.dtype), 'runs': args.runs, 'fields': len(schema),
         'preparation_ms': preparation_ms, 'prefix_tokens': original_length,
+        'cuda_graph': rt.cuda_graph, 'capture_ms': capture_ms,
+        'graph_disabled': rt.graph_cache.disabled, 'graph_replays': rt.graph_cache.replays,
+        'summary_ms': {mode: {key: {
+            'p50': statistics.median(r[mode][key] for r in rows),
+            'p95': sorted(r[mode][key] for r in rows)[
+                min(len(rows) - 1, int(.95 * len(rows)))],
+        } for key in ('wall_ms', 'prefill_ms', 'pass_ms')} for mode in ('full', 'prefix')}, 
         'all_answers_equal': all(r['same_answers'] for r in rows),
         'means': means,
         'wall_speedup': means['full']['wall_ms'] / means['prefix']['wall_ms'],
