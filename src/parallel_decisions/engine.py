@@ -185,6 +185,8 @@ class Decider:
         self._tokenizer = None
         self._kv_bytes_per_token: int | None = None
         self._model_bytes: int | None = None
+        self._compile_cache: dict[tuple[int, int], list[CompiledField]] = {}
+        self._active_fields: dict[str, Field] = {}
 
     # ------------------------------------------------------------------ load
     def _log(self, message: str) -> None:
@@ -395,10 +397,30 @@ class Decider:
         with self._acquire_lock("decide"):
             return self._decide_locked(context, schema, temperature)
 
+    def _compile(self, schema: Schema) -> list[CompiledField]:
+        """Compile a schema once per (schema object, tokenizer) pair.
+
+        Compilation tokenizes every field's suffix and answers. In a pipeline that
+        calls `decide()` on thousands of contexts with the same schema, that is pure
+        repetition: the tokenizer is immutable and the schema is not modified after
+        construction, so the result can be reused. Keyed on identity so mutating a
+        `Schema` in place (which the API does not support, but which is possible)
+        cannot produce stale results for a *different* object.
+        """
+        key = (id(schema), id(self._tokenizer))
+        compiled = self._compile_cache.get(key)
+        if compiled is None:
+            compiled = schema.compile(self._tokenizer)
+            if len(self._compile_cache) >= 32:      # bounded: long-running servers
+                self._compile_cache.clear()
+            self._compile_cache[key] = compiled
+        return compiled
+
     def _decide_locked(self, context: str, schema: Schema,
                        temperature: float) -> DecisionResult:
         t_start = time.perf_counter()
-        compiled = schema.compile(self._tokenizer)
+        compiled = self._compile(schema)
+        self._active_fields = schema.fields
         prompt = build_prompt(context, schema)
         prompt_tokens = self._tokenizer.encode(prompt)
 
@@ -413,6 +435,39 @@ class Decider:
         chunk_size = self._auto_chunk_size(len(prompt_tokens))
         self._log(f"{len(compiled)} decision rows (multi-select fields expand per choice), "
                   f"chunk size {chunk_size}")
+        values, pass_ms, chunks = self._run_all_chunks(
+            prompt_cache, compiled, chunk_size, temperature)
+
+        result = DecisionResult(
+            values,
+            model=self.model_id,
+            latency_ms=(time.perf_counter() - t_start) * 1000,
+            prefill_ms=prefill_ms,
+            pass_ms=pass_ms,
+            fields_evaluated=len(compiled),
+            chunks=chunks,
+            calibrated=self.calibrator is not None,
+        )
+        self.log_event(
+            "decide",
+            fields=len(schema),
+            rows=len(compiled),
+            chunks=chunks,
+            context_chars=len(context),
+            prompt_tokens=len(prompt_tokens),
+            prefill_ms=round(prefill_ms, 1),
+            pass_ms=round(pass_ms, 1),
+            latency_ms=round(result.latency_ms, 1),
+            calibrated=self.calibrator is not None,
+            calibration_kind=self.calibrator.kind if self.calibrator else None,
+            shared_prefix=False,
+        )
+        return result
+
+    def _run_all_chunks(self, prompt_cache, compiled: Sequence[CompiledField],
+                        chunk_size: int, temperature: float
+                        ) -> tuple[dict[str, FieldValue], float, int]:
+        """Run every decision row against `prompt_cache`, chunked, with recovery."""
         plain: dict[str, FieldValue] = {}
         per_choice: dict[str, dict[int, FieldValue]] = {}
         pass_ms = 0.0
@@ -441,36 +496,19 @@ class Decider:
 
         values: dict[str, FieldValue] = dict(plain)
         for name, by_index in per_choice.items():
-            values[name] = self._assemble_multi(schema[name], by_index)
+            values[name] = self._assemble_multi(self._schema_field(name), by_index)
 
         if self.calibrator is not None:
-            values = {name: self._apply_calibration(schema[name], fv)
+            values = {name: self._apply_calibration(self._schema_field(name), fv)
                       for name, fv in values.items()}
+        return values, pass_ms, chunks
 
-        result = DecisionResult(
-            values,
-            model=self.model_id,
-            latency_ms=(time.perf_counter() - t_start) * 1000,
-            prefill_ms=prefill_ms,
-            pass_ms=pass_ms,
-            fields_evaluated=len(compiled),
-            chunks=chunks,
-            calibrated=self.calibrator is not None,
-        )
-        self.log_event(
-            "decide",
-            fields=len(schema),
-            rows=len(compiled),
-            chunks=chunks,
-            context_chars=len(context),
-            prompt_tokens=len(prompt_tokens),
-            prefill_ms=round(prefill_ms, 1),
-            pass_ms=round(pass_ms, 1),
-            latency_ms=round(result.latency_ms, 1),
-            calibrated=self.calibrator is not None,
-            calibration_kind=self.calibrator.kind if self.calibrator else None,
-        )
-        return result
+    def _schema_field(self, name: str):
+        """Look up a field by name from the schema used for the current call."""
+        field = self._active_fields.get(name)
+        if field is None:
+            raise RuntimeError(f"field {name!r} is not part of the active schema")
+        return field
 
     def _apply_calibration(self, f: Field, fv: FieldValue) -> FieldValue:
         """Replace the raw softmax confidence with the calibrated one.
@@ -518,9 +556,132 @@ class Decider:
             calibrated=True,
         )
 
+    # -------------------------------------------------- shared schema prefix
+    def prepare(self, schema: Schema | Mapping[str, Any]) -> "PromptPrefix":
+        """Prefill the schema block once, for reuse across many contexts.
+
+        The schema block and the user turn's opening are byte-identical for every
+        context decided against the same schema, so their prefill does not have to be
+        repeated. On short contexts with a large schema that is most of the prefill;
+        on a 38k-token invoice it is a few percent.
+
+        The trade-off is memory: the returned prefix holds its own KV cache, and each
+        `decide_with_prefix()` copies it before appending the context. Use
+        `release()` when the schema changes.
+
+        Falls back to full prefill (and says so) when the tokenizer does not keep the
+        prefix intact — splitting a prompt into separately-tokenized pieces is only
+        valid when the boundary does not create a merge.
+        """
+        if not isinstance(schema, Schema):
+            schema = Schema(schema)
+        self.load()
+        prefix_text, _ = build_prompt_parts("", schema)
+        prefix_tokens = self._tokenizer.encode(prefix_text)
+        compiled = self._compile(schema)
+
+        # Validate the split against a real context: the prefix tokens must be a
+        # token-prefix of the whole prompt.
+        probe_text = build_prompt("x", schema)
+        probe_tokens = self._tokenizer.encode(probe_text)
+        if list(probe_tokens[:len(prefix_tokens)]) != list(prefix_tokens):
+            self._log("shared-prefix reuse unavailable: the prompt prefix does not "
+                      "tokenize as an independent prefix (falling back to full prefill)")
+            return PromptPrefix(decider=self, schema=schema, cache=None,
+                                prefix_tokens=[], compiled=compiled)
+
+        from mlx_lm.models.cache import make_prompt_cache
+        cache = make_prompt_cache(self._model)
+        self._model(mx.array([prefix_tokens], dtype=mx.int32), cache=cache)
+        mx.eval(*[c.keys for c in cache if getattr(c, "keys", None) is not None])
+        self._log(f"prepared shared prefix: {len(prefix_tokens)} tokens, "
+                  f"{len(compiled)} decision rows")
+        return PromptPrefix(decider=self, schema=schema, cache=cache,
+                            prefix_tokens=prefix_tokens, compiled=compiled)
+
+    def decide_with_prefix(self, prefix: "PromptPrefix", context: str, *,
+                          temperature: float = 1.0) -> DecisionResult:
+        """Like `decide()`, but reuses a prefix prefilled by `prepare()`.
+
+        Only this context's own tokens are prefilled. The answer is the same as
+        `decide()` up to floating-point reassociation, and `tests/test_shared_prefix.py`
+        checks that on the real model.
+        """
+        if not isinstance(context, str) or not context.strip():
+            raise ValueError("context must be a non-empty string")
+        if prefix.decider is not self:
+            raise ValueError("this prefix belongs to a different Decider")
+        if prefix.cache is None:
+            return self.decide(context, prefix.schema, temperature=temperature)
+
+        self.load()
+        with self._acquire_lock("decide_with_prefix"):
+            return self._decide_from_prefix(prefix, context, temperature)
+
+    def _decide_from_prefix(self, prefix: "PromptPrefix", context: str,
+                            temperature: float) -> DecisionResult:
+        from mlx_lm.models.cache import make_prompt_cache
+        t_start = time.perf_counter()
+        self._active_fields = prefix.schema.fields
+        _, remainder = build_prompt_parts(context, prefix.schema)
+        remainder_tokens = self._tokenizer.encode(remainder)
+
+        cache = _copy_cache(prefix.cache)
+        t_pre = time.perf_counter()
+        self._model(mx.array([remainder_tokens], dtype=mx.int32), cache=cache)
+        mx.eval(*[c.keys for c in cache if getattr(c, "keys", None) is not None])
+        prefill_ms = (time.perf_counter() - t_pre) * 1000
+        prompt_tokens = len(prefix.prefix_tokens) + len(remainder_tokens)
+        self._log(f"prefilled {len(remainder_tokens)} tokens after a reused "
+                  f"{len(prefix.prefix_tokens)}-token prefix in {prefill_ms:.0f} ms")
+
+        chunk_size = self._auto_chunk_size(prompt_tokens)
+        values, pass_ms, chunks = self._run_all_chunks(
+            cache, prefix.compiled, chunk_size, temperature)
+        result = DecisionResult(
+            values,
+            model=self.model_id,
+            latency_ms=(time.perf_counter() - t_start) * 1000,
+            prefill_ms=prefill_ms,
+            pass_ms=pass_ms,
+            fields_evaluated=len(prefix.compiled),
+            chunks=chunks,
+            calibrated=self.calibrator is not None,
+        )
+        self.log_event("decide", fields=len(prefix.schema), rows=len(prefix.compiled),
+                       chunks=chunks, context_chars=len(context),
+                       prompt_tokens=prompt_tokens, prefill_ms=round(prefill_ms, 1),
+                       pass_ms=round(pass_ms, 1), latency_ms=round(result.latency_ms, 1),
+                       calibrated=self.calibrator is not None,
+                       calibration_kind=self.calibrator.kind if self.calibrator else None,
+                       shared_prefix=True)
+        return result
+
     def decide_many(self, contexts: Iterable[str], schema: Schema | Mapping[str, Any],
-                    *, temperature: float = 1.0) -> list[DecisionResult]:
-        return [self.decide(ctx, schema, temperature=temperature) for ctx in contexts]
+                    *, temperature: float = 1.0,
+                    shared_prefix: bool = False) -> list[DecisionResult]:
+        """Decide the same schema against several contexts.
+
+        With `shared_prefix=True` the schema block is prefilled once and reused
+        (`prepare()` / `decide_with_prefix()`), which removes most of the prefill cost
+        when many contexts share a schema and are shorter than it — tickets, receipts,
+        emails. Off by default because the prefix holds memory for the whole loop.
+
+        Batching the contexts into one forward pass is *not* implemented: that needs
+        per-row sequence lengths in the KV cache, and `mlx-lm`'s forward path does not
+        accept an attention mask, so a padded batch would attend over the padding.
+        """
+        if not isinstance(schema, Schema):
+            schema = Schema(schema)
+        contexts = list(contexts)
+        if not shared_prefix:
+            return [self.decide(ctx, schema, temperature=temperature) for ctx in contexts]
+        prefix = self.prepare(schema)
+        try:
+            return [self.decide_with_prefix(prefix, ctx, temperature=temperature)
+                    for ctx in contexts]
+        finally:
+            prefix.release()
 
     # ------------------------------------------------------------- internals
     def _auto_chunk_size(self, prompt_tokens: int) -> int:
@@ -702,6 +863,54 @@ def _coerce_calibrator(value: "str | Calibrator | Mapping[str, Any] | None") -> 
     if isinstance(value, (str, bytes)) or hasattr(value, "__fspath__"):
         return Calibrator.from_json(str(value))
     raise TypeError(f"calibration must be a path, dict or Calibrator, got {type(value).__name__}")
+
+
+class PromptPrefix:
+    """A prefilled schema block, reusable across contexts.
+
+    Created by `Decider.prepare()`, consumed by `Decider.decide_with_prefix()`.
+    Holds its own KV cache (one context's worth of the schema block), so call
+    `release()` when you are done with it or when the schema changes.
+    """
+
+    def __init__(self, *, decider: "Decider", schema: Schema, cache, prefix_tokens,
+                 compiled: list[CompiledField]):
+        self.decider = decider
+        self.schema = schema
+        self.cache = cache
+        self.prefix_tokens = prefix_tokens
+        self.compiled = compiled
+
+    @property
+    def reusable(self) -> bool:
+        """False when the tokenizer could not keep the prefix intact."""
+        return self.cache is not None
+
+    @property
+    def prefix_tokens_count(self) -> int:
+        return len(self.prefix_tokens)
+
+    def release(self) -> None:
+        self.cache = None
+        _clear_mlx_cache()
+
+    def __repr__(self) -> str:  # pragma: no cover - convenience
+        return (f"PromptPrefix(fields={len(self.schema)}, "
+                f"prefix_tokens={len(self.prefix_tokens)}, reuse={self.reusable})")
+
+
+def _copy_cache(cache):
+    """A shallow cache copy that shares the immutable keys/values arrays.
+
+    `mx.repeat` in `_repeat_cache` already allocates new arrays, so the broadcast
+    path never writes into them; this copy exists so the per-context append does not
+    grow the shared prefix.
+    """
+    out = []
+    for layer_cache in cache:
+        new_cache = copy.copy(layer_cache)
+        out.append(new_cache)
+    return out
 
 
 def _cache_arrays(layer_cache: Any) -> Iterable[Any]:

@@ -51,6 +51,19 @@ def _option_labels(f) -> list[str]:
 
 
 def build_prompt(context: str, schema: Schema) -> str:
+    prefix, remainder = build_prompt_parts(context, schema)
+    return prefix + remainder
+
+
+def build_prompt_parts(context: str, schema: Schema) -> tuple[str, str]:
+    """The prompt as (shared_prefix, per_context_remainder).
+
+    The schema block and the user turn's opening are identical for every context
+    decided against the same schema, so they can be prefilled once and reused
+    (`Decider.prepare()` / `decide_with_prefix()`). Splitting here keeps a single
+    source of truth for the prompt text: `build_prompt` is defined in terms of these
+    two parts, so a rotation of the format cannot desynchronise them.
+    """
     lines = []
     for f in schema.fields.values():
         if f.is_multi:
@@ -74,10 +87,10 @@ def build_prompt(context: str, schema: Schema) -> str:
     system = "Classify JSON attributes:\n" + "\n".join(lines)
     # A single opening brace: the JSON is never generated past this point, and the
     # field suffixes are compiled as `  "name": ` relative to exactly one `{`.
-    return (
+    prefix = (
         "<|im_start|>system\n"
         f"{system}<|im_end|>\n"
         "<|im_start|>user\n"
-        f"{context}<|im_end|>\n"
-        "<|im_start|>assistant\n{\n"
     )
+    remainder = f"{context}<|im_end|>\n<|im_start|>assistant\n{{\n"
+    return prefix, remainder
