@@ -266,6 +266,43 @@ Notes on the torch backend:
   (Apache-2.0), added 2026-09-16 (commit `031d1a8`, "dual MLX/PyTorch engine
   support").
 
+### Reusing a schema prefix on Torch
+
+`prepare()`, `decide_with_prefix()` and `decide_many(..., shared_prefix=True)`
+now support the Torch backend. Keep the schema unchanged while reusing a prefix:
+
+```python
+from parallel_decisions import Decider, Schema
+
+decider = Decider(model_id="Qwen/Qwen2.5-0.5B-Instruct", backend="torch",
+                  torch_dtype="float16")
+schema = Schema({"needs_review": {"type": "boolean", "description": "Needs review"}})
+prefix = decider.prepare(schema)
+try:
+    result = decider.decide_with_prefix(prefix, "Customer reports a duplicate charge.")
+finally:
+    prefix.release()
+
+# Convenience API; prepares and releases the prefix automatically:
+results = decider.decide_many(["Ticket one", "Ticket two"], schema, shared_prefix=True)
+```
+
+The schema is prefilled once, then each context extends a private cache. Actual
+full-prompt token IDs are checked before reuse; a boundary mismatch falls back to
+full prefill and reports `telemetry["shared_prefix"] = False`. Preparation, use
+and release obey the model lock. A released prefix falls back to full prefill.
+Do not mutate a prepared schema or reuse it with a different Decider.
+
+Measured on an RTX 2060 SUPER with Qwen2.5-0.5B fp16, 8 description-heavy fields,
+405 prefix tokens and 10 alternating full/prefix pairs: **88.5 → 61.9 ms/request**
+(1.43×), prefill **54.8 → 29.3 ms** (1.87×), with identical selected answers.
+Preparation cost **89.3 ms** separately (roughly four requests to amortize on this
+workload). This is not a universal speedup or evidence of decision accuracy.
+Low-precision reassociation can change probabilities and near-tied decisions.
+Run `python scripts/measure_prefix_speedup.py --output prefix-results.json` to
+record raw paired measurements. CUDA timers now synchronize the device and
+`pass_ms` includes collision scoring, unlike older asynchronous phase timings.
+
 ### Observability
 
 `PD_LOG=json` (or `log = "json"` in `pd.toml`) emits one line per model load and per

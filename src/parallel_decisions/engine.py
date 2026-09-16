@@ -732,6 +732,21 @@ class Decider:
         if not isinstance(schema, Schema):
             schema = Schema(schema)
         self.load()
+        if self.backend == "torch":
+            from .engine_torch import prepare_torch
+
+            with self._acquire_lock("prepare"):
+                compiled = self._compile(schema)
+                prepared = prepare_torch(self._torch_rt, schema, compiled)
+            if prepared["cache"] is None:
+                self._log("shared-prefix reuse unavailable: the prompt prefix does not "
+                          "tokenize as an independent prefix (falling back to full prefill)")
+                return PromptPrefix(decider=self, schema=schema, cache=None,
+                                    prefix_tokens=[], compiled=compiled)
+            self._log(f"prepared shared prefix (torch): {len(prepared['tokens'])} tokens, "
+                      f"{len(compiled)} decision rows")
+            return PromptPrefix(decider=self, schema=schema, cache=prepared["cache"],
+                                prefix_tokens=prepared["tokens"], compiled=compiled)
         prefix_text, _ = build_prompt_parts("", schema)
         prefix_tokens = self._tokenizer.encode(prefix_text)
         compiled = self._compile(schema)
@@ -767,10 +782,46 @@ class Decider:
             raise ValueError("context must be a non-empty string")
         if prefix.decider is not self:
             raise ValueError("this prefix belongs to a different Decider")
-        if prefix.cache is None:
+        if prefix.cache is None and self.backend != "torch":
             return self.decide(context, prefix.schema, temperature=temperature)
 
         self.load()
+        if self.backend == "torch":
+            from .engine_torch import decide_torch
+
+            with self._acquire_lock("decide_with_prefix"):
+                t_start = time.perf_counter()
+                self._active_fields = prefix.schema.fields
+                out = decide_torch(
+                    self._torch_rt, context, prefix.schema, prefix.compiled,
+                    temperature=temperature, max_collision_rows=self.max_collision_rows,
+                    fields_per_pass=self.max_fields_per_batch,
+                    prefix={"cache": prefix.cache,
+                            "tokens": prefix.prefix_tokens})
+                values = out["values"]
+                if self.calibrator is not None:
+                    values = {name: self._apply_calibration(self._schema_field(name), fv)
+                              for name, fv in values.items()}
+                result = DecisionResult(
+                    values, model=out["model"],
+                    latency_ms=(time.perf_counter() - t_start) * 1000,
+                    prefill_ms=out["prefill_ms"], pass_ms=out["pass_ms"],
+                    fields_evaluated=out["fields_evaluated"], chunks=out["chunks"],
+                    calibrated=self.calibrator is not None)
+                result.telemetry = {"device": out["device"], "backend": "torch",
+                                    "prompt_tokens": out["prompt_tokens"],
+                                    "shared_prefix": out["shared_prefix"]}
+                self.log_event("decide", backend="torch", device=out["device"],
+                               fields=len(prefix.schema), rows=len(prefix.compiled),
+                               chunks=out["chunks"], context_chars=len(context),
+                               prompt_tokens=out["prompt_tokens"],
+                               prefill_ms=round(out["prefill_ms"], 1),
+                               pass_ms=round(out["pass_ms"], 1),
+                               latency_ms=round(result.latency_ms, 1),
+                               calibrated=self.calibrator is not None,
+                               calibration_kind=self.calibrator.kind if self.calibrator else None,
+                               shared_prefix=out["shared_prefix"])
+                return result
         with self._acquire_lock("decide_with_prefix"):
             return self._decide_from_prefix(prefix, context, temperature)
 
@@ -1055,6 +1106,10 @@ class PromptPrefix:
         return len(self.prefix_tokens)
 
     def release(self) -> None:
+        if getattr(self.decider, "backend", "mlx") == "torch":
+            with self.decider._acquire_lock("release prefix"):
+                self.cache = None
+            return
         self.cache = None
         _clear_mlx_cache()
 

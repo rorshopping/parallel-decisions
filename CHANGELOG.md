@@ -9,6 +9,13 @@ The torch backend: the same parallel constrained decoding on NVIDIA GPUs and CPU
 
 ### Added
 
+- **Torch shared-prefix reuse**: `prepare`, `decide_with_prefix` and
+  `decide_many(shared_prefix=True)` prefill a schema once. Private cache copies,
+  per-context full-tokenization validation, locked prepare/use/release and truthful
+  fallback telemetry protect reuse. Model-free tiny CPU-model regression tests
+  cover collisions, chunks, BOS, boundary merges, calibration and cache integrity.
+- Synchronized CUDA phase timing and a paired, raw-JSON prefix benchmark. On one
+  RTX 2060 SUPER fp16 workload: 88.5 → 61.9 ms/request; results are workload-specific.
 - **Torch backend (`parallel_decisions.engine_torch`)**: a PyTorch port of the
   decoding scheme — one prefill, one broadcast KV cache, one batched pass, exact
   collision resolution — for CUDA GPUs and CPU-only machines. Port origin:

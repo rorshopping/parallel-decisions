@@ -20,7 +20,7 @@ import copy
 import time
 from typing import Any, Sequence
 
-from .prompts import build_prompt
+from .prompts import build_prompt, build_prompt_parts
 from .schema import CompiledField
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -78,13 +78,22 @@ class TorchRuntime:
                   f"in {time.perf_counter() - t0:.1f}s")
         return self
 
+    def synchronize(self):
+        """Wait for this device before recording wall-clock inference timings."""
+        if str(self.device).startswith("cuda"):
+            self.torch.cuda.synchronize(self.device)
+
     # ------------------------------------------------------------- primitives
-    def prefill(self, tokens: list[int]):
-        """One forward pass over the full prompt; returns (cache, prompt_len)."""
+    def prefill(self, tokens: list[int], cache=None):
+        """One forward pass over the given tokens; returns (cache, n_prompt_tokens).
+
+        With `cache` given, the tokens are appended to it (shared-prefix reuse);
+        the caller owns the cache and must pass a private copy.
+        """
         torch = self.torch
         inputs = torch.tensor([tokens], dtype=torch.long, device=self.device)
         with torch.no_grad():
-            out = self.model(inputs, use_cache=True)
+            out = self.model(inputs, use_cache=True, past_key_values=cache)
         return out.past_key_values, inputs.shape[1]
 
     def broadcast(self, cache, n: int):
@@ -98,11 +107,11 @@ class TorchRuntime:
         object and write freshly repeated tensors into the copies, leaving the
         original cache exactly as it was.
         """
+        if n == 1:
+            return self._copy_torch_cache(cache)
         torch = self.torch
         layers = getattr(cache, "layers", None)
         if layers is None:  # legacy tuple-of-tuples cache
-            if n == 1:
-                return copy.deepcopy(cache)
             return tuple(
                 tuple(t.repeat(n, 1, 1, 1) for t in layer) for layer in cache)
         new_cache = type(cache)()
@@ -112,11 +121,35 @@ class TorchRuntime:
             for attr in ("keys", "values"):
                 tensor = getattr(layer, attr, None)
                 if (tensor is not None and tensor.dim() >= 1
-                        and tensor.shape[0] == 1 and n > 1):
+                        and tensor.shape[0] == 1):
                     tensor = tensor.repeat_interleave(n, dim=0)
                 setattr(new_layer, attr, tensor)
             new_layers.append(new_layer)
         new_cache.layers = new_layers
+        return new_cache
+
+    @staticmethod
+    def _copy_torch_cache(cache):
+        """Private copy for one call: layer objects copied, tensors shared.
+
+        HF's in-place `update()` appends into whatever layer objects the cache
+        holds; sharing them lets one call's append grow (and corrupt) a cache the
+        caller still holds — the prompt cache when a pass has a single row, the
+        prepared prefix in decide_with_prefix(). Copying the layer objects makes
+        each call's appends land in its own private cache.
+        """
+        try:
+            from transformers.cache_utils import DynamicLayer
+        except ImportError:  # legacy transformers cache API
+            return copy.deepcopy(cache)
+
+        layers = getattr(cache, "layers", None)
+        # Only ordinary DynamicLayer is known to replace rather than modify its
+        # tensors. Clone unknown/hybrid/legacy layouts conservatively.
+        if layers is None or any(type(layer) is not DynamicLayer for layer in layers):
+            return copy.deepcopy(cache)
+        new_cache = copy.copy(cache)
+        new_cache.layers = [copy.copy(layer) for layer in layers]
         return new_cache
 
     def batched_pass(self, cache, rows: list[list[int]], pad_id: int):
@@ -191,25 +224,69 @@ def resolve_collision_rows(rt: TorchRuntime, cache, groups: Sequence[CompiledFie
     return log_probs
 
 
+def prepare_torch(rt: TorchRuntime, schema, compiled) -> dict[str, Any]:
+    """Prefill the schema block once for reuse across many contexts.
+
+    Mirrors `Decider.prepare()` on the MLX path: the schema block and the user
+    turn's opening are byte-identical for every context decided against the same
+    schema, so their prefill can be shared. The split is only valid when the
+    tokenizer keeps the prefix intact (`encode(prefix)` is a token-prefix of the
+    whole prompt); when it merges across the boundary the cache is returned as
+    None and the caller falls back to a full prefill, exactly like MLX does.
+    """
+    rt.load()
+    prefix_text, _ = build_prompt_parts("", schema)
+    prefix_tokens = rt.tokenizer.encode(prefix_text)
+    probe_tokens = rt.tokenizer.encode(build_prompt("x", schema))
+    if list(probe_tokens[:len(prefix_tokens)]) != list(prefix_tokens):
+        return {"cache": None, "tokens": prefix_tokens, "compiled": compiled}
+    cache, _ = rt.prefill(prefix_tokens)
+    rt.synchronize()
+    return {"cache": cache, "tokens": prefix_tokens, "compiled": compiled}
+
+
 def decide_torch(rt: TorchRuntime, context: str, schema, compiled, *, temperature: float = 1.0,
                  max_collision_rows: int = 8, fields_per_pass: int | None = None,
-                 calibration=None) -> dict[str, Any]:
+                 calibration=None, prefix: dict[str, Any] | None = None) -> dict[str, Any]:
     """The MLX `decide()` pipeline, on torch. Returns a telemetry dict.
 
     `compiled` is the schema's CompiledField list (multi fields already expanded),
     `calibration` an optional callable applied to each {answer: prob} distribution.
+    `prefix` is a prepared dict from `prepare_torch()`: its schema-block cache is
+    reused and only the context's own tokens are prefilled. The copy before the
+    append exists so the shared prefix cache is never grown by a call.
     """
     from .engine import FieldValue
 
     t_start = time.perf_counter()
     rt.load()
     pad = rt.pad_id()
-    prompt = build_prompt(context, schema)
-    tokens = rt.tokenizer.encode(prompt)
-
-    t_pre = time.perf_counter()
-    cache, _ = rt.prefill(tokens)
-    prefill_ms = (time.perf_counter() - t_pre) * 1000
+    # Validate the actual context, not just prepare()'s probe: a boundary merge
+    # can depend on its first character. Use full tokenization on either path.
+    prompt_tokens_list = rt.tokenizer.encode(build_prompt(context, schema))
+    shared_prefix = False
+    if prefix is not None and prefix.get("cache") is not None:
+        n_prefix = len(prefix["tokens"])
+        shared_prefix = (list(prefix["tokens"])
+                         == list(prompt_tokens_list[:n_prefix]))
+        remainder_tokens = prompt_tokens_list[n_prefix:]
+    if shared_prefix:
+        prompt_tokens = len(prompt_tokens_list)
+        rt.synchronize()
+        t_pre = time.perf_counter()
+        cache = rt._copy_torch_cache(prefix["cache"])
+        cache, _ = rt.prefill(remainder_tokens, cache=cache)
+        rt.synchronize()
+        prefill_ms = (time.perf_counter() - t_pre) * 1000
+        shared_prefix = True
+    else:
+        prompt_tokens = len(prompt_tokens_list)
+        rt.synchronize()
+        t_pre = time.perf_counter()
+        cache, _ = rt.prefill(prompt_tokens_list)
+        rt.synchronize()
+        prefill_ms = (time.perf_counter() - t_pre) * 1000
+        shared_prefix = False
 
     fields_per_pass = fields_per_pass or len(compiled)
     values: dict[str, FieldValue] = {}
@@ -222,7 +299,6 @@ def decide_torch(rt: TorchRuntime, context: str, schema, compiled, *, temperatur
         group = compiled[start:start + fields_per_pass]
         t0 = time.perf_counter()
         logits, _ = rt.batched_pass(cache, [cf.suffix_tokens for cf in group], pad)
-        pass_ms += (time.perf_counter() - t0) * 1000
         chunks += 1
 
         collisions: list[CompiledField] = []
@@ -250,6 +326,8 @@ def decide_torch(rt: TorchRuntime, context: str, schema, compiled, *, temperatur
                     plain[cf.field.name] = fv
                 else:
                     per_choice.setdefault(cf.field.name, {})[cf.choice_index] = fv
+        rt.synchronize()
+        pass_ms += (time.perf_counter() - t0) * 1000
         start += len(group)
 
     values.update(plain)
@@ -281,7 +359,8 @@ def decide_torch(rt: TorchRuntime, context: str, schema, compiled, *, temperatur
         "pass_ms": pass_ms,
         "fields_evaluated": len(compiled),
         "chunks": chunks,
-        "prompt_tokens": len(tokens),
+        "prompt_tokens": prompt_tokens,
+        "shared_prefix": shared_prefix,
     }
 
 
