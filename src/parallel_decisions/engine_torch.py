@@ -88,23 +88,36 @@ class TorchRuntime:
         return out.past_key_values, inputs.shape[1]
 
     def broadcast(self, cache, n: int):
-        """Repeat a batch-1 cache to n identical rows (HF DynamicCache aware).
+        """Repeat a batch-1 cache to n identical rows without touching the original.
 
-        Uses HF's in-place `batch_repeat_interleave` on a shallow copy when
-        available: DynamicCache layers hold the cache in a list, so `copy.deepcopy`
-        of the wrapper is cheap (no tensor data is copied) and `repeat` writes new
-        broadcast tensors into this copy rather than into the caller's cache.
+        The upstream port calls `DynamicCache.batch_repeat_interleave`, which mutates
+        the layer objects in place — and after a shallow copy those layers are still
+        *shared* with the caller's cache. A second pass over the same prompt cache
+        (collision resolution, chunking, prefix reuse) then finds an already-broadcast
+        cache and dies in `torch.cat` with a batch mismatch. So: copy every layer
+        object and write freshly repeated tensors into the copies, leaving the
+        original cache exactly as it was.
         """
         torch = self.torch
-        if n == 1:
-            return copy.copy(cache)
-        repeated = copy.copy(cache)
-        if hasattr(repeated, "batch_repeat_interleave"):
-            repeated.batch_repeat_interleave(n)
-        else:  # legacy tuple-of-tuples caches
-            repeated = tuple(
-                tuple(t.repeat(n, 1, 1, 1) for t in layer) for layer in repeated)
-        return repeated
+        layers = getattr(cache, "layers", None)
+        if layers is None:  # legacy tuple-of-tuples cache
+            if n == 1:
+                return copy.deepcopy(cache)
+            return tuple(
+                tuple(t.repeat(n, 1, 1, 1) for t in layer) for layer in cache)
+        new_cache = type(cache)()
+        new_layers = []
+        for layer in layers:
+            new_layer = copy.copy(layer)
+            for attr in ("keys", "values"):
+                tensor = getattr(layer, attr, None)
+                if (tensor is not None and tensor.dim() >= 1
+                        and tensor.shape[0] == 1 and n > 1):
+                    tensor = tensor.repeat_interleave(n, dim=0)
+                setattr(new_layer, attr, tensor)
+            new_layers.append(new_layer)
+        new_cache.layers = new_layers
+        return new_cache
 
     def batched_pass(self, cache, rows: list[list[int]], pad_id: int):
         """One forward pass over padded suffix/answer rows against a broadcast cache.
