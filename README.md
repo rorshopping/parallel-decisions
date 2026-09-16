@@ -116,6 +116,39 @@ schema.to_json("fraud.json")
 schema = Schema.from_json("fraud.json")
 ```
 
+## Using it from another project
+
+Install this folder as an editable dependency of the other project's environment:
+
+```bash
+uv pip install --python /path/to/other-project/.venv/bin/python -e /Users/richardbaecker/Documents/projects/parallel-decisions
+```
+
+Then in that project:
+
+```python
+from parallel_decisions import Decider, Schema
+
+# create ONCE at process start (model load takes a few seconds) and reuse
+_decider = Decider()
+
+def classify(ticket: str) -> dict:
+    return _decider.decide(ticket, TICKET_SCHEMA).json()
+```
+
+For services, keep one `Decider` per process and call it from a thread pool — the
+model is small enough for one request at a time, and batching is the caller's job.
+If you cannot install the package, copying `src/parallel_decisions/` into the other
+project works: it has no intra-package dependencies outside the standard library.
+
+Swap the model per use case:
+
+| model id | notes |
+|---|---|
+| `mlx-community/Qwen2.5-7B-Instruct-4bit` | default, best measured accuracy (73.8%) |
+| `mlx-community/Qwen2.5-1.5B-Instruct-4bit` | ~4x faster, noticeably weaker decisions |
+| `mlx-community/Qwen3-8B-4bit` | fits, no measured advantage over the 7B here |
+
 ## CLI
 
 ```bash
