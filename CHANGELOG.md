@@ -3,6 +3,31 @@
 All notable changes to `parallel-decisions`. The package follows
 [Semantic Versioning](https://semver.org/); `0.x` means the API can still move.
 
+## 0.3.0 — 2026-09-16
+
+The torch backend: the same parallel constrained decoding on NVIDIA GPUs and CPU.
+
+### Added
+
+- **Torch backend (`parallel_decisions.engine_torch`)**: a PyTorch port of the
+  decoding scheme — one prefill, one broadcast KV cache, one batched pass, exact
+  collision resolution — for CUDA GPUs and CPU-only machines. Port origin:
+  `harshatheg/Qwen-2.5-1B-RLCD` commit `031d1a8` (2026-09-16, Apache-2.0),
+  integrated here on top of the package's schema, collision and calibration
+  machinery rather than vendored (the upstream port lacks collision handling,
+  multi-select and chunking).
+- **`Decider(backend=...)`** / `pd.toml backend = "auto" | "mlx" | "torch"` with
+  `PD_BACKEND` env override; `torch_dtype` / `torch_device` tune the torch side.
+  `auto` keeps MLX on Apple Silicon and selects torch (CUDA if present) elsewhere,
+  replacing the hard non-arm64 failure with a working backend.
+- Windows support for the pure-Python surface: `_physical_ram_bytes()` now uses
+  `GlobalMemoryStatusEx`, so memory clamping and the test suite work off macOS.
+
+### Changed
+
+- Tests that require `mlx`/`mlx_lm` skip cleanly when the package cannot import
+  (it has no Windows build) instead of erroring through `pytest.importorskip`.
+
 ## 0.2.0 — 2026-09-16
 
 Calibration lands: confidences become numbers you can threshold on.

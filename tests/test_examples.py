@@ -54,7 +54,10 @@ def load_example(name: str):
 
 def test_invoice_review_builds_a_collision_free_schema():
     """The per-line questions are generated at call time; they must lint clean."""
-    pytest.importorskip("mlx_lm")
+    try:
+        import mlx_lm  # noqa: F401
+    except Exception as exc:  # broken import (no mlx on Windows) counts too
+        pytest.skip(f"mlx_lm unavailable: {exc}")
     from parallel_decisions import Decider
     from parallel_decisions.lint import lint_schema
     from parallel_decisions.schema import Schema

@@ -223,7 +223,48 @@ max_collision_rows = 8        # rows per pass when scoring colliding choices exa
 warmup = true                 # compile Metal shaders once at load
 lock_timeout_s = 0            # 0 = fail fast if another thread is mid-call
 log = "json"                  # one JSON line per call on stderr
+backend = "auto"              # "auto" | "mlx" | "torch" — see "NVIDIA GPU / CPU (torch backend)"
+torch_dtype = "bfloat16"      # torch backend only: bfloat16 | float16 | float32
+torch_device = "cuda"         # torch backend only: "cuda" | "cpu" (default: auto-detect)
 ```
+
+### NVIDIA GPU / CPU (torch backend)
+
+The package also runs on machines with no Apple Silicon: a CUDA GPU (any NVIDIA
+card supported by PyTorch) or plain CPU, via a PyTorch port of the same decoding
+scheme (`engine_torch.py`, contributed upstream by the `harshatheg/Qwen-2.5-1B-RLCD`
+project and integrated here on top of the package's schema, collision and
+calibration machinery). With `backend = "auto"` (the default) an Apple Silicon
+Mac uses MLX; everything else uses torch with CUDA when available.
+
+Install the extra dependencies on a GPU/CPU machine:
+
+```bash
+uv pip install torch --index-url https://download.pytorch.org/whl/cu124   # CUDA build; plain 'torch' for CPU
+uv pip install "transformers>=4.40" accelerate
+```
+
+```python
+from parallel_decisions import Decider
+
+decider = Decider(backend="torch")                 # or backend="mlx"
+result = decider.decide("wire transfer to Cyprus...", schema)
+result.telemetry["device"]                         # "cuda"
+```
+
+Notes on the torch backend:
+
+- Candidate scoring, collision resolution, multi-select and calibration are the
+  same code paths' semantics as MLX; results match up to float reassociation.
+- Weights load in bf16 on CUDA (fp32 on CPU). An 8 GB card fits Qwen2.5-7B
+  (fp16/bf16 weights + broadcast KV) only for short contexts; the 0.5B–1.5B class
+  is the comfortable target, and `torch_device = "cpu"` always works.
+- `memory_budget_gb` clamps chunking on this backend too (via `psutil` when RAM
+  cannot be probed), so oversized schemas chunk instead of OOMing.
+- The upstream reference for this port is `core/engine_torch.py` in
+  [harshatheg/Qwen-2.5-1B-RLCD](https://huggingface.co/harshatheg/Qwen-2.5-1B-RLCD)
+  (Apache-2.0), added 2026-09-16 (commit `031d1a8`, "dual MLX/PyTorch engine
+  support").
 
 ### Observability
 

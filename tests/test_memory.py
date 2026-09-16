@@ -7,6 +7,8 @@ swaps and the call gets several times slower.
 
 from __future__ import annotations
 
+import pytest
+
 from parallel_decisions.engine import (
     MEMORY_HEADROOM,
     Decider,
@@ -105,6 +107,11 @@ def test_cache_slots_finds_list_entries_and_skips_none():
 def test_repeat_array_only_touches_batch_major_arrays(monkeypatch):
     """Scalars, already-batched arrays and n==1 must not be repeated."""
     from parallel_decisions import engine
+
+    try:
+        import mlx.core  # noqa: F401
+    except Exception as exc:
+        pytest.skip(f"mlx unavailable: {exc}")
 
     calls = []
     monkeypatch.setattr(engine.mx, "repeat",

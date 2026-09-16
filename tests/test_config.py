@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from parallel_decisions.config import Config, ConfigError, find_config_file, load_config
@@ -143,9 +145,43 @@ def test_platform_guard_rejects_non_arm(monkeypatch):
 
     monkeypatch.delenv("PD_ALLOW_NON_ARM", raising=False)
     monkeypatch.setattr("platform.machine", lambda: "x86_64")
-    decider = Decider(model_id="unused", warmup=False, config=Config())
+    # the torch backend intentionally works on non-arm64 hosts; only the MLX
+    # backend is Apple-Silicon-only, so force it for this test
+    decider = Decider(model_id="unused", warmup=False, config=Config(),
+                      backend="mlx")
     with pytest.raises(UnsupportedPlatformError):
         decider._check_platform()
+
+
+def test_auto_backend_selects_torch_off_mac(monkeypatch):
+    from parallel_decisions.engine import _select_backend
+
+    monkeypatch.setattr("sys.platform", "win32")
+    monkeypatch.setattr("platform.machine", lambda: "x86_64")
+    assert _select_backend("auto") == "torch"
+
+
+def test_auto_backend_selects_mlx_on_apple_silicon(monkeypatch):
+    from parallel_decisions.engine import _select_backend
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr("platform.machine", lambda: "arm64")
+    assert _select_backend("auto") == "mlx"
+
+
+def test_backend_argument_overrides_config(monkeypatch):
+    from parallel_decisions.engine import Decider
+
+    decider = Decider(model_id="unused", warmup=False, config=Config(),
+                      backend="torch")
+    assert decider.backend == "torch"
+
+
+def test_backend_rejects_unknown_values():
+    from parallel_decisions.engine import _select_backend
+
+    with pytest.raises(ValueError):
+        _select_backend("tensorrt")
 
 
 def test_platform_guard_can_be_overridden(monkeypatch):

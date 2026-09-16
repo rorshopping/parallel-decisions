@@ -60,6 +60,18 @@ DEFAULT_MAX_FIELDS = 32
 DEFAULT_MAX_COLLISION_ROWS = 8
 
 
+def _select_backend(backend: str | None) -> str:
+    """Resolve 'auto' to mlx on Apple Silicon, torch everywhere else."""
+    choice = (backend or "auto").strip().lower()
+    if choice in ("mlx", "torch"):
+        return choice
+    if choice not in ("auto", ""):
+        raise ValueError(f"backend must be 'auto', 'mlx' or 'torch', got {backend!r}")
+    if sys.platform == "darwin" and platform.machine() in ("arm64", "aarch64"):
+        return "mlx"
+    return "torch"
+
+
 class ConcurrencyError(RuntimeError):
     """Raised when another thread is already inside the model."""
 
@@ -119,6 +131,7 @@ class DecisionResult(dict):
         self.fields_evaluated = fields_evaluated
         self.chunks = chunks
         self.calibrated = calibrated
+        self.telemetry: dict[str, Any] = {}
 
     # -- output helpers ------------------------------------------------------
     def json(self) -> dict[str, Any]:
@@ -153,6 +166,9 @@ class Decider:
                  warmup: bool | None = None,
                  lock_timeout_s: float | None = None,
                  config: str | Config | None = None,
+                 backend: str | None = None,
+                 torch_dtype: str | None = None,
+                 torch_device: str | None = None,
                  verbose: bool = False):
         cfg = config if isinstance(config, Config) else load_config(config)
         self.config = cfg
@@ -171,6 +187,14 @@ class Decider:
         if lock_timeout_s is None:
             lock_timeout_s = cfg.lock_timeout_s
 
+        # explicit argument > env/pd.toml > default ("auto")
+        backend = backend or getattr(cfg, "backend", None)
+        torch_dtype = torch_dtype or getattr(cfg, "torch_dtype", None)
+        torch_device = torch_device or getattr(cfg, "torch_device", None)
+        self.backend = _select_backend(backend)
+        self.torch_dtype = torch_dtype
+        self.torch_device = torch_device
+
         self.model_id = model_id or DEFAULT_MODEL
         self.max_fields_per_batch = max(1, int(max_fields_per_batch or DEFAULT_MAX_FIELDS))
         self.memory_budget_bytes = int((memory_budget_gb or DEFAULT_MEMORY_BUDGET_GB) * (1024 ** 3))
@@ -183,6 +207,7 @@ class Decider:
         self._lock = threading.Lock()
         self._model = None
         self._tokenizer = None
+        self._torch_rt = None
         self._kv_bytes_per_token: int | None = None
         self._kv_constant_bytes_per_row: int = 0
         self._model_bytes: int | None = None
@@ -198,11 +223,15 @@ class Decider:
         """Load the tokenizer alone, for schema compilation and lints.
 
         `pd validate --check-tokens` and the MCP lint tool only need to tokenize, so
-        they must not pull a multi-gigabyte model into memory. Older `mlx-lm` has no
-        tokenizer-only entry point; falling back to `load()` is correct, just heavier.
+        they must not pull a multi-gigabyte model into memory. On the torch backend
+        (or older `mlx-lm`) there is no tokenizer-only entry point; falling back to
+        `load()` is correct, just heavier.
         """
         if self._tokenizer is None:
-            self._check_platform()
+            if self.backend == "torch" or _select_backend(
+                    getattr(self.config, "backend", None)) == "torch":
+                self.load()
+                return self
             t0 = time.perf_counter()
             try:
                 from mlx_lm.utils import load_tokenizer
@@ -224,13 +253,15 @@ class Decider:
     def _check_platform(self) -> None:
         if os.environ.get("PD_ALLOW_NON_ARM") in ("1", "true", "yes"):
             return
+        if self.backend == "torch":
+            return  # the torch backend exists precisely for non-Apple-Silicon hosts
         machine = platform.machine()
         if machine not in ("arm64", "aarch64"):
             raise UnsupportedPlatformError(
                 f"parallel-decisions needs an Apple Silicon (arm64) machine; this is "
-                f"{machine!r} on {sys.platform}. See README: the torch cross-check path "
-                f"(core/engine_torch.py in the research tree) is not part of the package. "
-                f"Set PD_ALLOW_NON_ARM=1 to try anyway (mlx may still work).")
+                f"{machine!r} on {sys.platform}. Use backend=\"torch\" (or "
+                f"PD_BACKEND=torch) for the CUDA/CPU engine, or set "
+                f"PD_ALLOW_NON_ARM=1 to try MLX anyway.")
 
     def load(self) -> "Decider":
         if self._model is None:
@@ -241,6 +272,9 @@ class Decider:
         return self
 
     def _load_unlocked(self) -> None:
+        if self.backend == "torch":
+            self._load_torch()
+            return
         from mlx_lm import load
         t0 = time.perf_counter()
         self._log(f"loading {self.model_id} ...")
@@ -266,6 +300,42 @@ class Decider:
                        config=self.config.source)
         if self.warmup:
             self._warmup()
+
+    def _load_torch(self) -> None:
+        """Load via the torch runtime (engine_torch.TorchRuntime)."""
+        from .engine_torch import TorchRuntime
+
+        t0 = time.perf_counter()
+        self._torch_rt = TorchRuntime(self.model_id, dtype=self.torch_dtype,
+                                      device=self.torch_device, verbose=self.verbose)
+        self._torch_rt.load()
+        self._model = self._torch_rt.model
+        self._tokenizer = self._torch_rt.tokenizer
+        self._model_bytes = None
+        self._kv_bytes_per_token = None
+        self._kv_constant_bytes_per_row = 0
+        elapsed = time.perf_counter() - t0
+        self._log(f"torch backend ready on {self._torch_rt.device} "
+                  f"({self._torch_rt.dtype}) in {elapsed:.1f}s")
+        self.log_event("load", backend="torch", device=str(self._torch_rt.device),
+                       seconds=round(elapsed, 3), model_bytes=None,
+                       memory_budget_bytes=self.memory_budget_bytes,
+                       config=self.config.source)
+        if self.warmup:
+            self._warmup_torch()
+
+    def _warmup_torch(self) -> None:
+        """One tiny prefill + broadcast pass so CUDA kernels/cuBLAS are compiled."""
+        try:
+            rt = self._torch_rt
+            toks = rt.tokenizer.encode("warmup context")
+            cache, _ = rt.prefill(toks)
+            rt.batched_pass(cache, [[rt.tokenizer.encode('  "x": ')[0],
+                                     *rt.tokenizer.encode("warmup")[:2]]], rt.pad_id())
+            if str(rt.device).startswith("cuda"):
+                rt.torch.cuda.synchronize()
+        except Exception as exc:  # pragma: no cover - warmup is best-effort
+            self._log(f"warmup skipped: {exc}")
 
     def _clamp_memory_budget(self) -> None:
         """Keep the model plus its KV broadcast below a share of physical RAM.
@@ -440,7 +510,48 @@ class Decider:
             schema = Schema(schema)
         self.load()
         with self._acquire_lock("decide"):
+            if self.backend == "torch":
+                return self._decide_torch_locked(context, schema, temperature)
             return self._decide_locked(context, schema, temperature)
+
+    def _decide_torch_locked(self, context: str, schema: Schema,
+                             temperature: float) -> DecisionResult:
+        from .engine_torch import decide_torch
+
+        t_start = time.perf_counter()
+        compiled = self._compile(schema)
+        self._active_fields = schema.fields
+
+        out = decide_torch(self._torch_rt, context, schema, compiled,
+                           temperature=temperature,
+                           max_collision_rows=self.max_collision_rows,
+                           fields_per_pass=self.max_fields_per_batch)
+        values = out["values"]
+        if self.calibrator is not None:  # identical calibration semantics to MLX
+            values = {name: self._apply_calibration(self._schema_field(name), fv)
+                      for name, fv in values.items()}
+        result = DecisionResult(
+            values,
+            model=out["model"],
+            latency_ms=(time.perf_counter() - t_start) * 1000,
+            prefill_ms=out["prefill_ms"],
+            pass_ms=out["pass_ms"],
+            fields_evaluated=out["fields_evaluated"],
+            chunks=out["chunks"],
+            calibrated=self.calibrator is not None,
+        )
+        result.telemetry = {"device": out["device"], "backend": "torch",
+                            "prompt_tokens": out["prompt_tokens"]}
+        self.log_event("decide", backend="torch", device=out["device"],
+                       fields=len(schema), rows=len(compiled), chunks=out["chunks"],
+                       context_chars=len(context), prompt_tokens=out["prompt_tokens"],
+                       prefill_ms=round(out["prefill_ms"], 1),
+                       pass_ms=round(out["pass_ms"], 1),
+                       latency_ms=round(result.latency_ms, 1),
+                       calibrated=self.calibrator is not None,
+                       calibration_kind=self.calibrator.kind if self.calibrator else None,
+                       shared_prefix=False)
+        return result
 
     def _compile(self, schema: Schema) -> list[CompiledField]:
         """Compile a schema once per (schema object, tokenizer) pair.
@@ -1018,6 +1129,27 @@ def _physical_ram_bytes() -> int | None:
             return int(pages) * int(size)
     except (AttributeError, ValueError, OSError):
         pass
+    if sys.platform == "win32":  # sysconf has no memory keys on Windows
+        try:
+            import ctypes
+
+            class _MemoryStatus(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong),
+                            ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+
+            status = _MemoryStatus()
+            status.dwLength = ctypes.sizeof(_MemoryStatus)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.ullTotalPhys)
+        except Exception:  # pragma: no cover - best effort telemetry
+            return None
     return None
 
 

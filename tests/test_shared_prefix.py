@@ -9,6 +9,11 @@ from __future__ import annotations
 
 import pytest
 
+try:  # mlx has no Windows build; a broken import must skip, not fail
+    import mlx_lm  # noqa: F401
+except Exception as _mlx_exc:  # ModuleNotFoundError, DLL load failure, ...
+    pytest.skip(f"mlx_lm unavailable: {_mlx_exc}", allow_module_level=True)
+
 from parallel_decisions import Schema
 from parallel_decisions.engine import PromptPrefix, _copy_cache
 from parallel_decisions.prompts import build_prompt, build_prompt_parts

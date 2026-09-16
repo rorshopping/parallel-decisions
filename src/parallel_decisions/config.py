@@ -16,6 +16,9 @@ Precedence (highest first):
     warmup = true
     log = "json"            # or "off"
     lock_timeout_s = 0      # 0 = fail fast if another thread is mid-call
+    backend = "auto"        # "auto" | "mlx" | "torch"
+    torch_dtype = "bfloat16"  # torch backend: bfloat16 | float16 | float32
+    torch_device = "cuda"     # torch backend: "cuda" | "cpu" (default: auto)
 """
 
 from __future__ import annotations
@@ -40,6 +43,9 @@ ENV_NAMES = {
     "warmup": "PD_WARMUP",
     "log": "PD_LOG",
     "lock_timeout_s": "PD_LOCK_TIMEOUT_S",
+    "backend": "PD_BACKEND",
+    "torch_dtype": "PD_TORCH_DTYPE",
+    "torch_device": "PD_TORCH_DEVICE",
 }
 ENV_CONFIG = "PD_CONFIG"
 BOOL_TRUE = {"1", "true", "yes", "on"}
@@ -61,6 +67,9 @@ class Config:
     warmup: bool | None = None
     log: str | None = None
     lock_timeout_s: float | None = None
+    backend: str | None = None
+    torch_dtype: str | None = None
+    torch_device: str | None = None
     source: str | None = None
 
     def resolved(self) -> dict[str, Any]:
