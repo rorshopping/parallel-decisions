@@ -192,8 +192,11 @@ Two costs dominate:
 ## Accuracy notes
 
 - **Probabilities are softmax over allowed answers**, not calibrated frequencies.
-  Treat them as relative confidence. In our eval, a high probability did not
-  reliably flag errors.
+  Treat them as relative confidence. In our evaluation, high confidence did **not**
+  reliably flag errors: 28 of 40 wrong answers on the default model carried ≥0.90
+  confidence. See [`CALIBRATION.md`](CALIBRATION.md) for the measured reliability
+  table, the difference between softmax and calibration, and the standard fixes
+  (temperature scaling, Platt/isotonic, bucketing).
 - **Choice collisions.** If two choices start with the same token, a single logit
   cannot separate them. This happens when a field's choices share a leading word but
   the set as a whole has no common prefix — e.g. `extra_approved` / `extra_unapproved`

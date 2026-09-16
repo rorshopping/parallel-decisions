@@ -67,9 +67,11 @@ assume more memory; respect the chunking design.
    (softmax over digit tokens), out of scope for now.
 2. **Batching several contexts.** `decide_many` is a loop; true batching across
    contexts (shared suffix pass, different prompts) would help pipelines.
-3. **Confidence calibration.** `probability` is raw softmax. Temperature scaling
-   fitted on a labelled set would make it usable as a real confidence signal.
-   We measured that it currently does *not* reliably flag errors.
+3. **Confidence calibration.** `probability` is raw softmax. There is a measured
+   reliability table in `CALIBRATION.md`: ECE ≈ 0.094, almost everything lands in the
+   0.9+ bucket, and wrong answers are nearly as confident as right ones. The intended
+   improvement is temperature scaling (`Decider(calibration=...)`) fitted on a labelled
+   set. Do not present these numbers as calibrated without doing that work.
 
 ## Things not to do
 
