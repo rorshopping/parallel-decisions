@@ -82,6 +82,10 @@ def main():
                 'decision_rows': len(d._compile(schema)),
                 'capture_ms': rt.graph_cache.capture_ms,
                 'free_bytes': torch.cuda.mem_get_info()[0],
+                'reason': (rt.graph_cache.disable_reason
+                           or ('no shapes captured (each shape must be seen at '
+                               'least twice before capture; raise --runs if the '
+                               'workload only ever calls each shape once)')),
             }
             print(json.dumps(output['workloads'][name], indent=2))
             continue

@@ -45,6 +45,7 @@ class TorchCudaGraphCache:
         self.entries: dict[tuple[int, int, int], Any] = {}
         self.seen: set[tuple[int, int, int]] = set()
         self.disabled = False
+        self.disable_reason: str | None = None
         self.capture_ms = 0.0  # cumulative setup + warmup + capture, not replay
         self.replays = 0
 
@@ -82,6 +83,7 @@ class TorchCudaGraphCache:
             return entry["logits"].clone(), entry["tokens"].clone()
         except Exception as exc:
             self.disabled = True
+            self.disable_reason = f"{type(exc).__name__}: {exc}"
             self.entries.clear()
             logging.getLogger(__name__).warning(
                 "CUDA graph fallback: disabling graphs for this runtime (%s: %s)",
