@@ -2,15 +2,21 @@
 
 Schema and Field: user-facing definitions plus tokenizer compilation.
 
-A Schema maps field names to Field objects. Each Field is either:
+A Schema maps field names to Field objects. Each Field is one of:
   - boolean: allowed answers true/false
   - enum:    allowed answers from a fixed choice list (2..255)
+  - multi:   any subset of the choices, decided as one independent yes/no
+             question per choice in the same batched pass
 
 compile() converts each field into the pieces the engine needs:
   suffix tokens   e.g. '  "risk": "' or '  "risk": "common_prefix'
   candidate ids   first token of each allowed answer's remainder
   sequences       full token sequences (used when two answers share a first token)
   collision flag  set when two answers share a first token
+
+A `multi` field expands into one CompiledField per choice (`choice_index` is set),
+each with its own suffix like '  "actions[2]": ' so every choice gets a distinct
+decision position while still landing in the same forward pass.
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ class SchemaError(ValueError):
 @dataclass
 class Field:
     name: str
-    type: str                      # "boolean" | "enum"
+    type: str                      # "boolean" | "enum" | "multi"
     description: str = ""
     choices: list[str] = field(default_factory=list)
     choice_descriptions: dict[str, str] = field(default_factory=dict)
@@ -40,7 +46,14 @@ class Field:
         return self.type == "boolean"
 
     @property
+    def is_multi(self) -> bool:
+        return self.type == "multi"
+
+    @property
     def answers(self) -> list[str]:
+        """The literal strings the model chooses between at a decision position."""
+        if self.is_multi:
+            return ["true", "false"]   # one yes/no per choice
         return ["true", "false"] if self.is_boolean else list(self.choices)
 
 
@@ -52,14 +65,23 @@ class Schema:
                 if not isinstance(spec, Mapping):
                     raise SchemaError(f"field {name!r}: expected an object, got {type(spec).__name__}")
                 ftype = str(spec.get("type", "enum")).lower()
-                if ftype not in ("boolean", "enum", "choice", "selection"):
-                    raise SchemaError(f"field {name!r}: unsupported type {ftype!r} (use 'boolean' or 'enum')")
+                if ftype not in ("boolean", "enum", "choice", "selection", "multi", "multi_select"):
+                    raise SchemaError(
+                        f"field {name!r}: unsupported type {ftype!r} "
+                        f"(use 'boolean', 'enum' or 'multi')")
                 if ftype in ("choice", "selection"):
                     ftype = "enum"
+                if ftype == "multi_select":
+                    ftype = "multi"
                 choices: list[str] = []
                 choice_descriptions: dict[str, str] = {}
                 if ftype == "boolean":
                     choices = ["true", "false"]
+                    raw = spec.get("choices")
+                    if isinstance(raw, Mapping):
+                        # {true: "...", false: "..."} — the definitions matter as much
+                        # for booleans as for enums (the reference eval passes them)
+                        choice_descriptions = {str(k).lower(): str(v) for k, v in raw.items()}
                 else:
                     raw = spec.get("choices")
                     if isinstance(raw, Mapping):
@@ -69,7 +91,7 @@ class Schema:
                     elif isinstance(raw, (list, tuple)):
                         choices = [str(c) for c in raw]
                     else:
-                        raise SchemaError(f"field {name!r}: enum fields require a 'choices' list or mapping")
+                        raise SchemaError(f"field {name!r}: enum/multi fields require a 'choices' list or mapping")
                     if len(choices) < 2:
                         raise SchemaError(f"field {name!r}: needs at least 2 choices")
                     if len(choices) > MAX_CHOICES:
@@ -107,7 +129,6 @@ class Schema:
                 item["choices"] = dict(f.choice_descriptions) if f.choice_descriptions else list(f.choices)
             out.append(item)
         return out
-
     # ---- (de)serialisation -------------------------------------------------
     def to_json(self, path: str | None = None) -> str:
         text = json.dumps({"fields": self.to_list()}, indent=2)
@@ -130,68 +151,98 @@ class Schema:
 
     # ---- tokenizer compilation --------------------------------------------
     def compile(self, tokenizer) -> list["CompiledField"]:
-        """Compile each field for the engine. Requires an mlx_lm tokenizer."""
-        return [CompiledField.build(f, tokenizer) for f in self.fields.values()]
+        """Compile each field for the engine. Requires an mlx_lm tokenizer.
+
+        A `multi` field compiles to one boolean row per choice, keyed
+        `"<name>[<index>]"` so each choice gets its own decision position.
+        """
+        out: list[CompiledField] = []
+        for f in self.fields.values():
+            if f.is_multi:
+                for i in range(len(f.choices)):
+                    out.append(CompiledField.build(f, tokenizer, choice_index=i))
+            else:
+                out.append(CompiledField.build(f, tokenizer))
+        return out
 
 
 @dataclass
 class CompiledField:
     field: Field
-    suffix_tokens: list[int]           # tokens of the literal text before the answer
-    candidate_ids: list[list[int]]     # candidate first-token ids per allowed answer
-    sequences: list[list[int]]         # full token sequences of each answer remainder
-    collision: bool                    # two answers share a first token
+    suffix: str                        # the literal text before the answer
+    suffix_tokens: list[int]           # its token ids
+    candidate_ids: list[list[int]]     # the token that starts each allowed answer
+    sequences: list[list[int]]         # tokens of each answer as actually emitted
+    collision: bool                    # two answers start with the same token
+    choice_index: int | None = None    # set for one row of a multi-select field
+
+    def __post_init__(self) -> None:
+        if self.choice_index is not None and not self.field.is_multi:
+            raise SchemaError(f"field {self.field.name!r}: choice_index only applies to multi fields")
+
+    @property
+    def row_name(self) -> str:
+        """The literal key this row's suffix writes (multi rows are indexed)."""
+        if self.choice_index is None:
+            return self.field.name
+        return f"{self.field.name}[{self.choice_index}]"
 
     @staticmethod
-    def _first_tokens(tokenizer, text: str) -> list[int]:
-        """Token ids that could start `text` (with and without a leading space)."""
-        ids: list[int] = []
-        for variant in (" " + text, text):
-            toks = tokenizer.encode(variant, add_special_tokens=False)
-            if toks:
-                ids.append(int(toks[0]))
-        seen: list[int] = []
-        for i in ids:
-            if i not in seen:
-                seen.append(i)
-        return seen
+    def _next_token(tokenizer, suffix: str, suffix_tokens: Sequence[int], answer: str) -> tuple[int, list[int]]:
+        """The token the model emits right after `suffix` when the answer is `answer`.
 
-    @staticmethod
-    def _bare_first(tokenizer, text: str) -> int:
-        """First token of `text` without a leading space (collision semantics)."""
-        toks = tokenizer.encode(text, add_special_tokens=False)
-        return int(toks[0]) if toks else -1
+        Read off the real encoding of `suffix + answer` rather than guessing from the
+        answer text: whether the tokenizer attaches a leading space to the answer
+        depends on how it splits the suffix, and getting that wrong shifts every
+        probability in the field. Returns (first token id, remaining tokens).
+        """
+        full = [int(t) for t in tokenizer.encode(suffix + answer, add_special_tokens=False)]
+        n = len(suffix_tokens)
+        if len(full) > n and list(full[:n]) == list(suffix_tokens):
+            return full[n], full[n:]
+        # The tokenizer merged across the suffix/answer boundary; fall back to the
+        # answer's own encoding so the row still has a usable decision position.
+        bare = [int(t) for t in tokenizer.encode(answer, add_special_tokens=False)]
+        if not bare:
+            return -1, [0]
+        return bare[0], bare
 
     @classmethod
-    def build(cls, f: Field, tokenizer) -> "CompiledField":
-        if f.is_boolean:
-            candidates = [cls._first_tokens(tokenizer, "true"), cls._first_tokens(tokenizer, "false")]
-            sequences = [
-                [int(t) for t in tokenizer.encode("true", add_special_tokens=False)],
-                [int(t) for t in tokenizer.encode("false", add_special_tokens=False)],
-            ]
-            bare_firsts = [cls._bare_first(tokenizer, "true"), cls._bare_first(tokenizer, "false")]
-            suffix = f'  "{f.name}": '
+    def build(cls, f: Field, tokenizer, choice_index: int | None = None) -> "CompiledField":
+        if f.is_boolean or f.is_multi:
+            key = f.name if choice_index is None else f"{f.name}[{choice_index}]"
+            suffix = f'  "{key}": '
+            suffix_tokens = [int(t) for t in tokenizer.encode(suffix, add_special_tokens=False)]
+            candidates: list[list[int]] = []
+            sequences: list[list[int]] = []
+            firsts: list[int] = []
+            for answer in ("true", "false"):
+                first, seq = cls._next_token(tokenizer, suffix, suffix_tokens, answer)
+                firsts.append(first)
+                candidates.append([first])
+                sequences.append(seq)
         else:
             prefix = os.path.commonprefix(f.choices)
+            suffix = f'  "{f.name}": "{prefix}'
+            suffix_tokens = [int(t) for t in tokenizer.encode(suffix, add_special_tokens=False)]
             candidates = []
             sequences = []
-            bare_firsts = []
+            firsts = []
             for choice in f.choices:
-                remainder = choice[len(prefix):]
-                toks = [int(t) for t in tokenizer.encode(remainder, add_special_tokens=False)] or [0]
-                sequences.append(toks)
-                candidates.append(cls._first_tokens(tokenizer, remainder))
-                bare_firsts.append(cls._bare_first(tokenizer, remainder))
-            suffix = f'  "{f.name}": "{prefix}'
+                first, seq = cls._next_token(tokenizer, suffix, suffix_tokens, choice[len(prefix):])
+                firsts.append(first)
+                candidates.append([first])
+                sequences.append(seq)
 
-        collision = len(set(bare_firsts)) < len(bare_firsts)
+        collision = len(set(firsts)) < len(firsts)
         return cls(
             field=f,
-            suffix_tokens=[int(t) for t in tokenizer.encode(suffix, add_special_tokens=False)],
+            suffix=suffix,
+            suffix_tokens=suffix_tokens,
             candidate_ids=candidates,
             sequences=sequences,
             collision=collision,
+            choice_index=choice_index,
         )
 
     def candidate_ids_for(self, answer_index: int) -> list[int]:

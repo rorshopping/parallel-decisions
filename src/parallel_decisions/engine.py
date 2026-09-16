@@ -18,14 +18,21 @@ so keys and types cannot be malformed.
 from __future__ import annotations
 
 import copy
+import json
+import os
+import platform
+import sys
+import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
 import mlx.core as mx
 
+from .calibration import Calibrator
+from .config import Config, load_config
 from .prompts import build_prompt
-from .schema import CompiledField, Schema
+from .schema import CompiledField, Field, Schema
 
 DEFAULT_MODEL = "mlx-community/Qwen2.5-7B-Instruct-4bit"
 DEFAULT_MEMORY_BUDGET_GB = 6.0
@@ -33,20 +40,45 @@ DEFAULT_MAX_FIELDS = 32
 DEFAULT_MAX_COLLISION_ROWS = 8
 
 
+class ConcurrencyError(RuntimeError):
+    """Raised when another thread is already inside the model."""
+
+
+class UnsupportedPlatformError(RuntimeError):
+    """Raised on machines this package does not support (non-arm64)."""
+
+
 @dataclass
 class FieldValue:
-    """One typed decision."""
+    """One typed decision.
+
+    `probability` is the confidence of the chosen value. Without calibration it is
+    the raw softmax slice; with a `Calibrator` attached to the `Decider` it is the
+    calibrated value and `raw_probability` keeps the original for comparison.
+
+    `distribution` holds the probability of *every* allowed answer (not just the
+    runner-up in `alternatives`), which is what the calibrator consumes.
+    """
 
     name: str
     value: Any
     probability: float
     alternatives: list[tuple[str, float]]
     approximate: bool = False
+    distribution: dict[str, float] = field(default_factory=dict)
+    raw_probability: float | None = None
+    calibrated: bool = False
+
+    def __post_init__(self) -> None:
+        if self.raw_probability is None:
+            self.raw_probability = self.probability
 
     def to_dict(self, probabilities: bool = True) -> dict:
         out: dict[str, Any] = {"value": self.value}
         if probabilities:
             out["probability"] = round(self.probability, 4)
+            if self.calibrated and self.raw_probability is not None:
+                out["raw_probability"] = round(self.raw_probability, 4)
         return out
 
     def __str__(self) -> str:  # pragma: no cover - convenience
@@ -58,7 +90,7 @@ class DecisionResult(dict):
 
     def __init__(self, mapping: Mapping[str, FieldValue], *, model: str = "",
                  latency_ms: float = 0.0, prefill_ms: float = 0.0, pass_ms: float = 0.0,
-                 fields_evaluated: int = 0, chunks: int = 0):
+                 fields_evaluated: int = 0, chunks: int = 0, calibrated: bool = False):
         super().__init__(mapping)
         self.model = model
         self.latency_ms = latency_ms
@@ -66,6 +98,7 @@ class DecisionResult(dict):
         self.pass_ms = pass_ms
         self.fields_evaluated = fields_evaluated
         self.chunks = chunks
+        self.calibrated = calibrated
 
     # -- output helpers ------------------------------------------------------
     def json(self) -> dict[str, Any]:
@@ -82,41 +115,114 @@ class DecisionResult(dict):
 
 
 class Decider:
-    """Loads a local MLX model once and answers schemas against contexts."""
+    """Loads a local MLX model once and answers schemas against contexts.
+
+    One model, one call at a time: `decide()` takes a lock, so a threaded server
+    cannot interleave two forward passes on the same MLX context (which surfaces as
+    a Metal error, not a clean exception). Pass `lock_timeout_s` to bound the wait.
+
+    Any argument left as `None` is taken from `pd.toml` / `PD_*` environment
+    variables when present, then from the module defaults. See `config.py`.
+    """
 
     def __init__(self, model_id: str | None = None, *,
-                 max_fields_per_batch: int = DEFAULT_MAX_FIELDS,
-                 memory_budget_gb: float = DEFAULT_MEMORY_BUDGET_GB,
-                 max_collision_rows: int = DEFAULT_MAX_COLLISION_ROWS,
-                 warmup: bool = True,
+                 max_fields_per_batch: int | None = None,
+                 memory_budget_gb: float | None = None,
+                 max_collision_rows: int | None = None,
+                 calibration: str | "Calibrator" | Mapping[str, Any] | None = None,
+                 warmup: bool | None = None,
+                 lock_timeout_s: float | None = None,
+                 config: str | Config | None = None,
                  verbose: bool = False):
+        cfg = config if isinstance(config, Config) else load_config(config)
+        self.config = cfg
+        if model_id is None:
+            model_id = cfg.model
+        if calibration is None:
+            calibration = cfg.calibration
+        if max_fields_per_batch is None:
+            max_fields_per_batch = cfg.max_fields_per_batch
+        if memory_budget_gb is None:
+            memory_budget_gb = cfg.memory_budget_gb
+        if max_collision_rows is None:
+            max_collision_rows = cfg.max_collision_rows
+        if warmup is None:
+            warmup = cfg.warmup
+        if lock_timeout_s is None:
+            lock_timeout_s = cfg.lock_timeout_s
+
         self.model_id = model_id or DEFAULT_MODEL
-        self.max_fields_per_batch = max(1, int(max_fields_per_batch))
-        self.memory_budget_bytes = int(memory_budget_gb * (1024 ** 3))
-        self.max_collision_rows = max(1, int(max_collision_rows))
-        self.warmup = warmup
+        self.max_fields_per_batch = max(1, int(max_fields_per_batch or DEFAULT_MAX_FIELDS))
+        self.memory_budget_bytes = int((memory_budget_gb or DEFAULT_MEMORY_BUDGET_GB) * (1024 ** 3))
+        self.max_collision_rows = max(1, int(max_collision_rows or DEFAULT_MAX_COLLISION_ROWS))
+        self.calibrator = _coerce_calibrator(calibration)
+        self.warmup = True if warmup is None else bool(warmup)
+        self.lock_timeout_s = float(lock_timeout_s) if lock_timeout_s else 0.0
+        self.log_mode = (cfg.log or os.environ.get("PD_LOG", "")).strip().lower()
         self.verbose = verbose
+        self._lock = threading.Lock()
         self._model = None
         self._tokenizer = None
         self._kv_bytes_per_token: int | None = None
+        self._model_bytes: int | None = None
 
     # ------------------------------------------------------------------ load
     def _log(self, message: str) -> None:
         if self.verbose:
             print(f"[parallel-decisions] {message}", flush=True)
 
+    def log_event(self, event: str, **fields: Any) -> None:
+        """Structured telemetry: one JSON line on stderr when PD_LOG=json."""
+        if self.log_mode not in ("json", "1", "true", "yes", "on"):
+            return
+        payload = {"event": event, "model": self.model_id, **fields}
+        print(json.dumps(payload, default=str), file=sys.stderr, flush=True)
+
+    def _check_platform(self) -> None:
+        if os.environ.get("PD_ALLOW_NON_ARM") in ("1", "true", "yes"):
+            return
+        machine = platform.machine()
+        if machine not in ("arm64", "aarch64"):
+            raise UnsupportedPlatformError(
+                f"parallel-decisions needs an Apple Silicon (arm64) machine; this is "
+                f"{machine!r} on {sys.platform}. See README: the torch cross-check path "
+                f"(core/engine_torch.py in the research tree) is not part of the package. "
+                f"Set PD_ALLOW_NON_ARM=1 to try anyway (mlx may still work).")
+
     def load(self) -> "Decider":
         if self._model is None:
-            from mlx_lm import load
-            t0 = time.perf_counter()
-            self._log(f"loading {self.model_id} ...")
-            self._model, self._tokenizer = load(self.model_id)
-            self._kv_bytes_per_token = _estimate_kv_bytes_per_token(self._model)
-            self._log(f"loaded in {time.perf_counter() - t0:.1f}s "
-                      f"(kv/token ~{self._kv_bytes_per_token or 0} bytes)")
-            if self.warmup:
-                self._warmup()
+            self._check_platform()
+            with self._acquire_lock("load"):
+                if self._model is None:
+                    self._load_unlocked()
         return self
+
+    def _load_unlocked(self) -> None:
+        from mlx_lm import load
+        t0 = time.perf_counter()
+        self._log(f"loading {self.model_id} ...")
+        self._model, self._tokenizer = load(self.model_id)
+        self._kv_bytes_per_token = _estimate_kv_bytes_per_token(self._model)
+        self._model_bytes = _estimate_model_bytes(self._model)
+        elapsed = time.perf_counter() - t0
+        self._log(f"loaded in {elapsed:.1f}s "
+                  f"(kv/token ~{self._kv_bytes_per_token or 0} bytes)")
+        self.log_event("load", seconds=round(elapsed, 3),
+                       kv_bytes_per_token=self._kv_bytes_per_token,
+                       model_bytes=self._model_bytes,
+                       config=self.config.source)
+        if self.warmup:
+            self._warmup()
+
+    # ------------------------------------------------------------------ lock
+    def _acquire_lock(self, what: str):
+        acquired = self._lock.acquire(timeout=max(0.0, self.lock_timeout_s))
+        if not acquired:
+            raise ConcurrencyError(
+                f"another thread is already running the model ({what}); "
+                f"waited {self.lock_timeout_s:.1f}s. One call at a time: either "
+                f"serialise calls, raise lock_timeout_s, or run a second Decider.")
+        return _LockGuard(self._lock)
 
     @property
     def model(self):
@@ -167,7 +273,11 @@ class Decider:
         if not isinstance(schema, Schema):
             schema = Schema(schema)
         self.load()
+        with self._acquire_lock("decide"):
+            return self._decide_locked(context, schema, temperature)
 
+    def _decide_locked(self, context: str, schema: Schema,
+                       temperature: float) -> DecisionResult:
         t_start = time.perf_counter()
         compiled = schema.compile(self._tokenizer)
         prompt = build_prompt(context, schema)
@@ -182,17 +292,43 @@ class Decider:
         self._log(f"prefilled {len(prompt_tokens)} tokens in {prefill_ms:.0f} ms")
 
         chunk_size = self._auto_chunk_size(len(prompt_tokens))
-        values: dict[str, FieldValue] = {}
+        self._log(f"{len(compiled)} decision rows (multi-select fields expand per choice), "
+                  f"chunk size {chunk_size}")
+        plain: dict[str, FieldValue] = {}
+        per_choice: dict[str, dict[int, FieldValue]] = {}
         pass_ms = 0.0
         chunks = 0
-        for start in range(0, len(compiled), chunk_size):
+        start = 0
+        while start < len(compiled):
             group = compiled[start:start + chunk_size]
-            chunk_values, chunk_ms = self._run_chunk(prompt_cache, group, temperature)
-            values.update(chunk_values)
+            try:
+                rows, chunk_ms = self._run_chunk(prompt_cache, group, temperature)
+            except Exception as exc:  # noqa: BLE001 - narrowed by _is_memory_error
+                if len(group) <= 1 or not _is_memory_error(exc):
+                    raise
+                chunk_size = max(1, len(group) // 2)
+                self._log(f"pass over {len(group)} field(s) failed "
+                          f"({type(exc).__name__}: {exc}); retrying with {chunk_size}")
+                _clear_mlx_cache()
+                continue
+            for cf, fv in rows:
+                if cf.choice_index is None:
+                    plain[cf.field.name] = fv
+                else:
+                    per_choice.setdefault(cf.field.name, {})[cf.choice_index] = fv
             pass_ms += chunk_ms
             chunks += 1
+            start += len(group)
 
-        return DecisionResult(
+        values: dict[str, FieldValue] = dict(plain)
+        for name, by_index in per_choice.items():
+            values[name] = self._assemble_multi(schema[name], by_index)
+
+        if self.calibrator is not None:
+            values = {name: self._apply_calibration(schema[name], fv)
+                      for name, fv in values.items()}
+
+        result = DecisionResult(
             values,
             model=self.model_id,
             latency_ms=(time.perf_counter() - t_start) * 1000,
@@ -200,6 +336,67 @@ class Decider:
             pass_ms=pass_ms,
             fields_evaluated=len(compiled),
             chunks=chunks,
+            calibrated=self.calibrator is not None,
+        )
+        self.log_event(
+            "decide",
+            fields=len(schema),
+            rows=len(compiled),
+            chunks=chunks,
+            context_chars=len(context),
+            prompt_tokens=len(prompt_tokens),
+            prefill_ms=round(prefill_ms, 1),
+            pass_ms=round(pass_ms, 1),
+            latency_ms=round(result.latency_ms, 1),
+            calibrated=self.calibrator is not None,
+            calibration_kind=self.calibrator.kind if self.calibrator else None,
+        )
+        return result
+
+    def _apply_calibration(self, f: Field, fv: FieldValue) -> FieldValue:
+        """Replace the raw softmax confidence with the calibrated one.
+
+        The chosen value never changes: every supported calibrator is monotone in
+        the top confidence, so calibration moves the *number*, not the answer.
+        Multi-select fields are a set of independent binary decisions, so each
+        choice's probability is calibrated on its own.
+        """
+        assert self.calibrator is not None
+        raw = fv.probability
+        if f.is_multi:
+            scores = {c: self.calibrator.transform_confidence(p)
+                      for c, p in fv.distribution.items()}
+            included = [c for c in f.choices if scores.get(c, 0.0) >= 0.5]
+            if included:
+                value: Any = included
+                calibrated = min(scores[c] for c in included)
+            else:
+                value = []
+                calibrated = 1.0 - max(scores.values()) if scores else 0.0
+            alternatives = sorted(((c, p) for c, p in scores.items() if c not in included),
+                                  key=lambda item: -item[1])[:4]
+            return FieldValue(name=fv.name, value=value, probability=calibrated,
+                              alternatives=alternatives, approximate=fv.approximate,
+                              distribution=scores, raw_probability=raw, calibrated=True)
+
+        dist = self.calibrator.transform(fv.distribution) if fv.distribution else None
+        if dist:
+            top = max(dist, key=dist.__getitem__)
+            calibrated = float(dist[top])
+            alternatives = sorted(
+                ((k, v) for k, v in dist.items() if k != top), key=lambda item: -item[1])[:4]
+        else:  # no distribution recorded (shouldn't happen): map the confidence alone
+            calibrated = self.calibrator.transform_confidence(raw)
+            alternatives = fv.alternatives
+        return FieldValue(
+            name=fv.name,
+            value=fv.value,
+            probability=calibrated,
+            alternatives=list(alternatives),
+            approximate=fv.approximate,
+            distribution=dist or {},
+            raw_probability=raw,
+            calibrated=True,
         )
 
     def decide_many(self, contexts: Iterable[str], schema: Schema | Mapping[str, Any],
@@ -217,7 +414,7 @@ class Decider:
         return max(1, min(self.max_fields_per_batch, budget_rows))
 
     def _run_chunk(self, prompt_cache, fields: Sequence[CompiledField],
-                   temperature: float) -> tuple[dict[str, FieldValue], float]:
+                   temperature: float) -> tuple[list[tuple[CompiledField, FieldValue]], float]:
         max_len = max(len(f.suffix_tokens) for f in fields)
         pad = self._pad_id
         rows = [f.suffix_tokens + [pad] * (max_len - len(f.suffix_tokens)) for f in fields]
@@ -229,17 +426,44 @@ class Decider:
         mx.eval(logits)
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
-        values: dict[str, FieldValue] = {}
+        out: list[tuple[CompiledField, FieldValue]] = []
         collisions: list[CompiledField] = []
         for row, cf in enumerate(fields):
             row_logits = logits[row, len(cf.suffix_tokens) - 1, :]
             if cf.collision:
                 collisions.append(cf)
             else:
-                values[cf.field.name] = self._slice_decision(cf, row_logits, temperature)
+                out.append((cf, self._slice_decision(cf, row_logits, temperature)))
         if collisions:
-            values.update(self._resolve_collisions(prompt_cache, collisions))
-        return values, elapsed_ms
+            resolved = self._resolve_collisions(prompt_cache, collisions)
+            for cf in collisions:
+                out.append((cf, resolved[cf.row_name]))
+        return out, elapsed_ms
+
+    @staticmethod
+    def _assemble_multi(f: Field, by_index: Mapping[int, FieldValue]) -> FieldValue:
+        """Fold per-choice yes/no rows into one list value.
+
+        `distribution` is the per-choice P(include) — not a distribution over a
+        partition, so it does not sum to 1. `probability` is the weakest "yes"
+        among the included choices (the confidence of the *set*, not of one member);
+        with nothing included it is the confidence in leaving the set empty.
+        """
+        scores: dict[str, float] = {}
+        for i, choice in enumerate(f.choices):
+            fv = by_index.get(i)
+            scores[choice] = float(fv.probability) if fv is not None else 0.0
+        included = [c for c in f.choices if scores[c] >= 0.5]
+        if included:
+            value: Any = included
+            probability = min(scores[c] for c in included)
+        else:
+            value = []
+            probability = 1.0 - max(scores.values()) if scores else 0.0
+        alternatives = sorted(((c, p) for c, p in scores.items() if c not in included),
+                              key=lambda item: -item[1])
+        return FieldValue(name=f.name, value=value, probability=probability,
+                          alternatives=alternatives[:4], distribution=dict(scores))
 
     def _slice_decision(self, cf: CompiledField, row_logits, temperature: float) -> FieldValue:
         scores = []
@@ -252,24 +476,31 @@ class Decider:
         probs = mx.softmax(scaled)
         mx.eval(probs)
         plist = [float(p) for p in probs]
-        best = max(range(len(plist)), key=plist.__getitem__)
+        return self._field_value(cf, plist)
+
+    @staticmethod
+    def _field_value(cf: CompiledField, plist: Sequence[float]) -> FieldValue:
+        """Assemble a FieldValue from one probability per allowed answer."""
         answers = cf.field.answers
+        best = max(range(len(plist)), key=plist.__getitem__)
         value = (answers[best] == "true") if cf.field.is_boolean else answers[best]
         alternatives = sorted(
             ((answers[i], plist[i]) for i in range(len(answers)) if i != best),
             key=lambda item: -item[1],
         )
-        return FieldValue(cf.field.name, value, plist[best], alternatives[:4])
+        distribution = {answers[i]: float(plist[i]) for i in range(len(answers))}
+        return FieldValue(cf.field.name, value, float(plist[best]), alternatives[:4],
+                          distribution=distribution)
 
     def _resolve_collisions(self, prompt_cache, fields: Sequence[CompiledField]) -> dict[str, FieldValue]:
         """Exact sequence scoring for fields whose answers share a first token."""
         rows: list[list[int]] = []
-        spans: list[tuple[str, int, int, int]] = []  # (field, choice idx, start, end)
+        spans: list[tuple[str, int, int, int]] = []  # (row key, choice idx, start, end)
         for cf in fields:
             suffix_len = len(cf.suffix_tokens)
             for ci, seq in enumerate(cf.sequences):
                 rows.append(cf.suffix_tokens + seq)
-                spans.append((cf.field.name, ci, suffix_len, suffix_len + len(seq)))
+                spans.append((cf.row_name, ci, suffix_len, suffix_len + len(seq)))
 
         log_probs: dict[str, dict[int, float]] = {}
         pad = self._pad_id
@@ -293,22 +524,88 @@ class Decider:
 
         values: dict[str, FieldValue] = {}
         for cf in fields:
-            per_choice = log_probs.get(cf.field.name, {})
+            per_choice = log_probs.get(cf.row_name, {})
             lps = [per_choice.get(ci, -1e9) for ci in range(len(cf.sequences))]
             probs = mx.softmax(mx.array(lps))
             mx.eval(probs)
             plist = [float(p) for p in probs]
-            best = max(range(len(plist)), key=plist.__getitem__)
-            answers = cf.field.answers
-            value = (answers[best] == "true") if cf.field.is_boolean else answers[best]
-            alternatives = sorted(
-                ((answers[i], plist[i]) for i in range(len(answers)) if i != best),
-                key=lambda item: -item[1],
-            )
-            values[cf.field.name] = FieldValue(
-                cf.field.name, value, plist[best], alternatives[:4], approximate=False,
-            )
+            values[cf.row_name] = self._field_value(cf, plist)
         return values
+
+
+class _LockGuard:
+    """Context manager that always releases the model lock."""
+
+    def __init__(self, lock: threading.Lock) -> None:
+        self._lock = lock
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *exc: Any) -> bool:
+        self._lock.release()
+        return False
+
+
+def _is_memory_error(exc: BaseException) -> bool:
+    """Heuristic: is this MLX/Metal saying 'not enough memory'?
+
+    MLX raises different things across versions (`MemoryError`, `RuntimeError` with
+    a Metal message, or a `std::bad_alloc` surfaced through pybind), so match on the
+    text and keep the recovery path narrow: only ever retried with a smaller batch.
+    """
+    if isinstance(exc, MemoryError):
+        return True
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(key in text for key in
+               ("memory", "alloc", "out of", "metal", "buffer", "resource limit"))
+
+
+def _clear_mlx_cache() -> None:
+    """Release MLX's cached buffers so the retry has room (best effort)."""
+    try:
+        import mlx.core as mx
+        clear = getattr(mx, "clear_cache", None) or getattr(getattr(mx, "metal", None), "clear_cache", None)
+        if clear is not None:
+            clear()
+    except Exception:  # pragma: no cover - cache clearing is best effort
+        pass
+
+
+def _coerce_calibrator(value: "str | Calibrator | Mapping[str, Any] | None") -> Calibrator | None:
+    """Accept a path, a dict, or a Calibrator instance."""
+    if value is None:
+        return None
+    if isinstance(value, Calibrator):
+        return value
+    if isinstance(value, Mapping):
+        return Calibrator.from_dict(value)
+    if isinstance(value, (str, bytes)) or hasattr(value, "__fspath__"):
+        return Calibrator.from_json(str(value))
+    raise TypeError(f"calibration must be a path, dict or Calibrator, got {type(value).__name__}")
+
+
+def _estimate_model_bytes(model) -> int | None:
+    """Rough size of the loaded weights, summed over the parameter tree."""
+    try:
+        total = sum(int(getattr(leaf, "nbytes", 0) or 0)
+                    for leaf in _tree_leaves(model.parameters()))
+    except Exception:  # pragma: no cover - best effort telemetry
+        return None
+    return total or None
+
+
+def _tree_leaves(tree: Any) -> Iterable[Any]:
+    if hasattr(tree, "nbytes"):
+        yield tree
+        return
+    if isinstance(tree, Mapping):
+        for value in tree.values():
+            yield from _tree_leaves(value)
+        return
+    if isinstance(tree, (list, tuple)):
+        for value in tree:
+            yield from _tree_leaves(value)
 
 
 def _estimate_kv_bytes_per_token(model) -> int | None:
