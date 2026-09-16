@@ -75,9 +75,14 @@ cli.py          `pd validate` / `decide` / `calibrate` / `config`.
 ```bash
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -e ".[dev]"
-.venv/bin/pytest                      # 102 tests, no model needed
+.venv/bin/pytest                      # 123 tests, no model needed
+.venv/bin/pd validate examples/fraud.json --check-tokens  # tokenizer only, no model
 .venv/bin/pd decide --schema examples/fraud.json --context "..."   # needs the model
 ```
+
+`tests/test_docs.py` keeps the README honest (its python blocks must parse, its
+commands must exist, every `pd.toml` key must be documented), and
+`tests/test_examples.py` keeps `examples/` runnable and collision-free.
 
 The machine this was developed on: MacBook Air M5, 16 GB, macOS 26.5. Do not
 assume more memory; respect the chunking design.

@@ -167,6 +167,12 @@ table and a routing sweep:
 on answers at this confidence, what error rate do I inherit and how much work do I
 skip" — measured out of sample, with Wilson intervals on the error rate.
 
+**Read the interval, not the point estimate.** Routing 100 decisions at a 1% budget
+will typically show a 0% measured error rate with a 95% upper bound near 20%: that
+is not evidence of a 1% error rate. The act bucket only becomes trustworthy with a
+few hundred labelled rows from the domain it will run in — which is why the routing
+demo is a measurement tool, not a policy you can copy.
+
 ### Batch many contexts
 
 ```python
@@ -193,7 +199,9 @@ file > default. `pd config` prints what is in effect.
 model = "mlx-community/Qwen2.5-7B-Instruct-4bit"
 calibration = "~/.config/parallel-decisions/calibration.json"
 max_fields_per_batch = 6      # lower = less memory, more passes
-memory_budget_gb = 6.0        # KV broadcast budget; chunk size is derived from it
+memory_budget_gb = 6.0        # KV broadcast budget; also clamped to 65% of RAM
+max_collision_rows = 8        # rows per pass when scoring colliding choices exactly
+warmup = true                 # compile Metal shaders once at load
 lock_timeout_s = 0            # 0 = fail fast if another thread is mid-call
 log = "json"                  # one JSON line per call on stderr
 ```
@@ -283,18 +291,23 @@ Two costs dominate:
   documents. Measured on the invoice eval: 84.6% of case wall time, ~620 ms per
   1k prompt tokens.
 - **Memory scales with `fields × context`** because the KV cache is broadcast once
-  per decision row. The chunk size is derived from `memory_budget_gb` (default
-  6 GB); if a pass still fails with a memory error the chunk size halves and retries
-  instead of failing the call. Chunking costs one extra cache copy per chunk, not
-  another prefill.
+  per decision row. The chunk size is derived from a *measured* per-token cache
+  growth, clamped so the weights plus the broadcast stay under 65% of physical RAM
+  (set `memory_budget_gb` lower if you want a smaller footprint). If a pass still
+  fails with a memory error the chunk size halves and retries instead of failing the
+  call. Chunking costs one extra cache copy per chunk, not another prefill.
 
 ## Accuracy notes
 
 - **Probabilities are softmax over allowed answers**, not calibrated frequencies.
-  Treat them as relative confidence until you fit a calibrator. On the default
-  model, 28 of 40 wrong answers carried ≥0.90 confidence before calibration; after
-  fitting on the same eval, `probability` matches observed accuracy within the
-  measured bands. See [`CALIBRATION.md`](CALIBRATION.md).
+  Treat them as relative confidence until you fit a calibrator on your own labelled
+  data. On the default model, 28 of 40 wrong answers carried ≥0.90 confidence before
+  calibration, and the raw confidence ranks better than it calibrates (AUROC 0.74
+  overall: 0.91 on choice fields, 0.66 on yes/no). Filtering to the most confident
+  10% of answers cut the error rate from 35% to 17% on the data we measured.
+  See [`CALIBRATION.md`](CALIBRATION.md) for the measured tables and, importantly,
+  the sample sizes — **calibration is not a substitute for labelled domain data, and
+  on ~100 rows no post-hoc method beat raw softmax out of sample.**
 - **The model has a listing-order preference.** It picks the first listed option in
   82% of choice fields, and is right 96.7% of the time when the correct option is
   first versus 24.5% when it is not. For choice fields, order your options by what

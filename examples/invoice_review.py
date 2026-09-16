@@ -25,6 +25,11 @@ JSON instead of running anything, so `pd decide` can be used directly.
 Memory note: a 40-line invoice over an 8k-token packet is ~290 decision rows. They
 are chunked automatically (`memory_budget_gb`); each chunk costs a cache copy, so
 raise the budget if you have headroom and lower it if you hit memory errors.
+
+Choice names here deliberately avoid token collisions: an earlier draft used
+`extra_approved` / `extra_unapproved`, which share their first token and force the
+slower sequence-scoring path. `pd validate --check-tokens` reports that; this schema
+is clean (checked in CI by `tests/test_examples.py`).
 """
 
 from __future__ import annotations
@@ -54,8 +59,8 @@ PER_LINE = {
         "type": "enum",
         "choices": {
             "within_scope": "the work fits what the contract or approval covers",
-            "extra_approved": "beyond the contract, but separately approved in writing",
-            "extra_unapproved": "beyond the contract with no approval on record",
+            "approved_extra": "beyond the contract, but separately approved in writing",
+            "unapproved_extra": "beyond the contract with no approval on record",
             "not_ours": "belongs to another party or project",
             "unsure": "the packet does not say",
         },
@@ -67,7 +72,7 @@ PER_LINE = {
         "choices": {
             "delivered": "the work or goods are evidenced as delivered",
             "in_progress": "partially delivered, with evidence",
-            "not_delivered": "no evidence of delivery",
+            "missing": "no evidence of delivery at all",
             "not_applicable": "delivery does not apply to this line",
         },
         "description": "If invoice line {n} ({line}) is work, what does the evidence show about completion?",
