@@ -26,6 +26,7 @@ class Native:
         self.copies = []
         self.clears = 0
         self.fail = False
+        self.syncs = 0
         self.buffer = np.zeros((4096, 256), dtype=np.float32)
 
     def llama_memory_clear(self, mem, data):
@@ -62,6 +63,9 @@ class Native:
                 self.buffer[i] = np.sin(np.arange(256) * .7 + seed % 997)
         self.calls.append(entries)
         return 0
+
+    def llama_synchronize(self, ctx):
+        self.syncs += 1
 
     def llama_get_logits_ith(self, ctx, index):
         return self.buffer[index].ctypes.data_as(ctypes.POINTER(ctypes.c_float))
@@ -107,6 +111,7 @@ def test_one_prefill_true_independent_native_batch_and_clean_request():
     assert all(e[2] != 0 for c in rt.native.calls[1:] for e in c)
     assert rt.native.copies and not rt.native.sequences
     assert rt.native.clears == 2
+    assert rt.native.syncs == 1  # prefill with no output rows must still finish
     assert isinstance(result["values"]["first"].value, bool)
     fv = result["values"]["items"]
     assert fv.value == [c for c, p in fv.distribution.items() if p >= .5]

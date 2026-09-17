@@ -1,6 +1,8 @@
 # GGUF backend (`backend="llamacpp"`)
 
-Status: implemented, unit-tested and native-smoke-tested on this machine.
+Status: implemented and native-tested; original functional harness passes with
+CPU repacking disabled, but the expanded full-sequence oracle still fails on
+ordinary multi marginals. **Not overall green.** See NOTES_GGUF_NATIVE_RUN.md.
 Branch `feat/gguf-engine`, version 0.4.0.
 
 ## Public contract

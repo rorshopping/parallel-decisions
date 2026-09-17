@@ -62,7 +62,8 @@ class LlamaCppRuntime:
             raise RuntimeError("llamacpp currently requires llama-cpp-python==0.3.35 (native ABI)")
         required = ("llama_get_memory", "llama_memory_seq_cp", "llama_memory_seq_rm",
                     "llama_memory_clear", "llama_batch_init", "llama_batch_free",
-                    "llama_decode", "llama_get_logits_ith", "llama_n_ctx_seq")
+                    "llama_decode", "llama_get_logits_ith", "llama_n_ctx_seq",
+                    "llama_synchronize")
         if any(not hasattr(native, name) for name in required):
             raise RuntimeError("llama-cpp-python lacks required multi-sequence native APIs")
         if self.max_rows + 1 > native.llama_max_parallel_sequences():
@@ -75,6 +76,10 @@ class LlamaCppRuntime:
         try:
             mp = native.llama_model_default_params()
             mp.n_gpu_layers = 0
+            # Repacked CPU kernels failed cross-row-limit agreement on 0.3.35
+            # (max marginal delta .00953). Original GGUF layout passes that gate;
+            # see NOTES_GGUF_NATIVE_RUN.md for the remaining full-sequence gap.
+            mp.use_extra_bufts = False
             model = stack.enter_context(closing(_internals.LlamaModel(
                 path_model=str(path), params=mp, verbose=self.verbose)))
             metadata = model.metadata()
@@ -169,6 +174,7 @@ class LlamaCppRuntime:
                        for i, t in enumerate(tokens[start:start + self.n_batch])]
             self._decode(entries)
             self.stats["prefill_decode_calls"] += 1
+        self.native.llama_synchronize(self.ctx.ctx)
         self.prompt_length = len(tokens)
 
     def batched_pass(self, rows, positions):
@@ -236,7 +242,7 @@ def _log_probability(rt, logits, target):
 
 def decide_llamacpp(rt, context, schema, compiled, *, temperature=1.0,
                     fields_per_pass=32, max_collision_rows=8):
-    from .engine import Decider, FieldValue
+    from .engine import Decider
 
     if not math.isfinite(temperature):
         raise ValueError("temperature must be finite")
@@ -300,9 +306,8 @@ def decide_llamacpp(rt, context, schema, compiled, *, temperature=1.0,
                 if cf.choice_index is None:
                     plain[cf.field.name] = fv
                 else:
-                    # _assemble_multi consumes P(include), NOT max(Ptrue,Pfalse).
-                    multi.setdefault(cf.field.name, {})[cf.choice_index] = FieldValue(
-                        cf.field.name, probs[0] >= 0.5, probs[0], [], distribution=fv.distribution)
+                    # Shared assembly reads P(true) from the boolean distribution.
+                    multi.setdefault(cf.field.name, {})[cf.choice_index] = fv
             chunks += 1
         values = dict(plain)
         for name, by_index in multi.items():
