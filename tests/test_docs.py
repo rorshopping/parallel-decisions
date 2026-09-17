@@ -33,6 +33,18 @@ def test_readme_python_snippets_parse():
             pytest.fail(f"README python block {i} does not parse: {exc}\n{block[:300]}")
 
 
+def test_gpu_guide_python_snippets_parse():
+    with open(os.path.join(ROOT, "GPU_SETUP.md"), encoding="utf-8") as fh:
+        text = fh.read()
+    blocks = re.findall(r"```python\n(.*?)```", text, re.S)
+    assert blocks
+    for block in blocks:
+        ast.parse(block)
+    # Integration examples must not silently opt into experimental graph replay.
+    assert "cuda_graph = false" in text
+    assert "cuda_graph=False" in text
+
+
 def test_readme_commands_exist():
     """Every `pd <subcommand>` and `python <path>` in the README must be real."""
     text = readme()
