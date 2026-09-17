@@ -962,7 +962,14 @@ class Decider:
         scores: dict[str, float] = {}
         for i, choice in enumerate(f.choices):
             fv = by_index.get(i)
-            scores[choice] = float(fv.probability) if fv is not None else 0.0
+            if fv is None:
+                scores[choice] = 0.0
+            elif fv.distribution and "true" in fv.distribution:
+                # P(include) is the row's P(true) marginal, NOT the winning
+                # side's confidence: a confident "false" must score low.
+                scores[choice] = float(fv.distribution["true"])
+            else:
+                scores[choice] = float(fv.probability)
         included = [c for c in f.choices if scores[c] >= 0.5]
         if included:
             value: Any = included
