@@ -65,10 +65,10 @@ DEFAULT_MAX_COLLISION_ROWS = 8
 def _select_backend(backend: str | None) -> str:
     """Resolve 'auto' to mlx on Apple Silicon, torch everywhere else."""
     choice = (backend or "auto").strip().lower()
-    if choice in ("mlx", "torch"):
+    if choice in ("mlx", "torch", "llamacpp"):
         return choice
     if choice not in ("auto", ""):
-        raise ValueError(f"backend must be 'auto', 'mlx' or 'torch', got {backend!r}")
+        raise ValueError(f"backend must be 'auto', 'mlx', 'torch' or 'llamacpp', got {backend!r}")
     if sys.platform == "darwin" and platform.machine() in ("arm64", "aarch64"):
         return "mlx"
     return "torch"
@@ -175,6 +175,9 @@ class Decider:
                  torch_dtype: str | None = None,
                  torch_device: str | None = None,
                  cuda_graph: bool | None = None,
+                 n_ctx: int | None = None,
+                 n_batch: int | None = None,
+                 n_threads: int | None = None,
                  verbose: bool = False):
         cfg = config if isinstance(config, Config) else load_config(config)
         self.config = cfg
@@ -202,6 +205,21 @@ class Decider:
         self.torch_device = torch_device
         self.cuda_graph = bool(cfg.cuda_graph) if cuda_graph is None else bool(cuda_graph)
 
+        self.n_ctx = n_ctx if n_ctx is not None else cfg.n_ctx
+        self.n_batch = n_batch if n_batch is not None else cfg.n_batch
+        self.n_threads = n_threads if n_threads is not None else cfg.n_threads
+        if self.backend == "llamacpp":
+            from .engine_llamacpp import _positive_int
+            if not model_id:
+                raise ValueError("llamacpp requires an explicit local GGUF model_id")
+            if self.cuda_graph or torch_dtype or torch_device or memory_budget_gb is not None:
+                raise ValueError("llamacpp supports CPU only; cuda_graph, Torch settings and memory_budget_gb are unsupported")
+            for name, value in (("max_fields_per_batch", max_fields_per_batch),
+                                ("max_collision_rows", max_collision_rows),
+                                ("n_ctx", self.n_ctx), ("n_batch", self.n_batch),
+                                ("n_threads", self.n_threads)):
+                if value is not None:
+                    _positive_int(name, value)
         if not model_id:
             if self.backend == "torch":
                 # This module, like the facade, imports no ML dependencies eagerly.
@@ -222,6 +240,7 @@ class Decider:
         self._model = None
         self._tokenizer = None
         self._torch_rt = None
+        self._llamacpp_rt = None
         self._kv_bytes_per_token: int | None = None
         self._kv_constant_bytes_per_row: int = 0
         self._model_bytes: int | None = None
@@ -242,7 +261,7 @@ class Decider:
         `load()` is correct, just heavier.
         """
         if self._tokenizer is None:
-            if self.backend == "torch" or _select_backend(
+            if self.backend in ("torch", "llamacpp") or _select_backend(
                     getattr(self.config, "backend", None)) == "torch":
                 self.load()
                 return self
@@ -267,8 +286,8 @@ class Decider:
     def _check_platform(self) -> None:
         if os.environ.get("PD_ALLOW_NON_ARM") in ("1", "true", "yes"):
             return
-        if self.backend == "torch":
-            return  # the torch backend exists precisely for non-Apple-Silicon hosts
+        if self.backend in ("torch", "llamacpp"):
+            return  # portable CPU/CUDA backends
         machine = platform.machine()
         if machine not in ("arm64", "aarch64"):
             raise UnsupportedPlatformError(
@@ -286,6 +305,23 @@ class Decider:
         return self
 
     def _load_unlocked(self) -> None:
+        if self.backend == "llamacpp":
+            from .engine_llamacpp import LlamaCppRuntime
+            rt = LlamaCppRuntime(
+                self.model_id, n_ctx=self.n_ctx if self.n_ctx is not None else 4096,
+                n_batch=self.n_batch if self.n_batch is not None else 512,
+                n_threads=self.n_threads,
+                max_rows=max(self.max_fields_per_batch, self.max_collision_rows),
+                verbose=self.verbose)
+            t0 = time.perf_counter()
+            rt.load()
+            self._llamacpp_rt = rt
+            self._model, self._tokenizer = rt.model, rt.tokenizer
+            self.log_event("load", backend="llamacpp", device="cpu",
+                           seconds=round(time.perf_counter() - t0, 3), **rt.metadata)
+            # Native CPU has no shader warmup. Do not perform an unreported
+            # extra request when warmup=True (the facade's historical default).
+            return
         if self.backend == "torch":
             self._load_torch()
             return
@@ -525,9 +561,37 @@ class Decider:
             schema = Schema(schema)
         self.load()
         with self._acquire_lock("decide"):
+            if self.backend == "llamacpp":
+                return self._decide_llamacpp_locked(context, schema, temperature)
             if self.backend == "torch":
                 return self._decide_torch_locked(context, schema, temperature)
             return self._decide_locked(context, schema, temperature)
+
+    def _decide_llamacpp_locked(self, context, schema, temperature):
+        from .engine_llamacpp import decide_llamacpp
+        started = time.perf_counter()
+        # Recompile here: identity-only cache keys can be recycled after a
+        # temporary mapping/Schema is collected, or stale after schema mutation.
+        compiled = schema.compile(self._tokenizer)
+        self._active_fields = schema.fields
+        out = decide_llamacpp(self._llamacpp_rt, context, schema, compiled,
+                             temperature=temperature,
+                             fields_per_pass=self.max_fields_per_batch,
+                             max_collision_rows=self.max_collision_rows)
+        values = out["values"]
+        if self.calibrator is not None:
+            values = {name: self._apply_calibration(schema[name], fv)
+                      for name, fv in values.items()}
+        result = DecisionResult(values, model=self.model_id,
+                                latency_ms=(time.perf_counter() - started) * 1000,
+                                prefill_ms=out["prefill_ms"], pass_ms=out["pass_ms"],
+                                fields_evaluated=out["fields_evaluated"], chunks=out["chunks"],
+                                calibrated=self.calibrator is not None)
+        result.telemetry = out["telemetry"]
+        self.log_event("decide", **result.telemetry, chunks=result.chunks,
+                       prefill_ms=result.prefill_ms, pass_ms=result.pass_ms,
+                       latency_ms=result.latency_ms, calibrated=result.calibrated)
+        return result
 
     def _decide_torch_locked(self, context: str, schema: Schema,
                              temperature: float) -> DecisionResult:
@@ -744,6 +808,8 @@ class Decider:
         prefix intact — splitting a prompt into separately-tokenized pieces is only
         valid when the boundary does not create a merge.
         """
+        if self.backend == "llamacpp":
+            raise NotImplementedError("llamacpp shared-schema prefix reuse is not implemented")
         if not isinstance(schema, Schema):
             schema = Schema(schema)
         self.load()
@@ -795,6 +861,8 @@ class Decider:
         """
         if not isinstance(context, str) or not context.strip():
             raise ValueError("context must be a non-empty string")
+        if self.backend == "llamacpp":
+            raise NotImplementedError("llamacpp shared-schema prefix reuse is not implemented")
         if prefix.decider is not self:
             raise ValueError("this prefix belongs to a different Decider")
         if prefix.cache is None and self.backend != "torch":

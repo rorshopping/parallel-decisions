@@ -3,6 +3,18 @@
 All notable changes to `parallel-decisions`. The package follows
 [Semantic Versioning](https://semver.org/); `0.x` means the API can still move.
 
+## 0.4.0 — unreleased
+
+- Opt-in `backend="llamacpp"` for local Qwen2 GGUF CPU inference using native
+  multiple sequence IDs, one context prefill, KV branches, ragged batched suffix
+  decoding and exact collision scoring. Optional dependency pins the verified
+  llama-cpp-python 0.3.35 ABI. No completion API, model downloads or prompt changes.
+- Added `n_ctx`, `n_batch`, `n_threads` configuration, request cleanup and
+  native-shaped fake regressions. Real Windows 7.6B Q4_K_M smoke is documented in
+  `NOTES_GGUF.md`; raw confidence is not measured decision accuracy.
+- Shared-schema prefix reuse, CUDA offload and CUDA Graphs are not supported by
+  this backend; unsupported settings fail closed. MLX/Torch defaults are unchanged.
+
 ## 0.3.1 — unreleased
 
 Integration-ready packaging for the torch backend.

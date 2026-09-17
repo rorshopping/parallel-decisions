@@ -47,6 +47,9 @@ ENV_NAMES = {
     "torch_dtype": "PD_TORCH_DTYPE",
     "torch_device": "PD_TORCH_DEVICE",
     "cuda_graph": "PD_CUDA_GRAPH",
+    "n_ctx": "PD_N_CTX",
+    "n_batch": "PD_N_BATCH",
+    "n_threads": "PD_N_THREADS",
 }
 ENV_CONFIG = "PD_CONFIG"
 BOOL_TRUE = {"1", "true", "yes", "on"}
@@ -72,6 +75,9 @@ class Config:
     torch_dtype: str | None = None
     torch_device: str | None = None
     cuda_graph: bool | None = None
+    n_ctx: int | None = None
+    n_batch: int | None = None
+    n_threads: int | None = None
     source: str | None = None
 
     def resolved(self) -> dict[str, Any]:
@@ -136,7 +142,7 @@ def _from_mapping(data: dict[str, Any], source: str | None = None) -> Config:
 
 
 def _coerce(key: str, value: Any) -> Any:
-    if key in ("max_fields_per_batch", "max_collision_rows"):
+    if key in ("max_fields_per_batch", "max_collision_rows", "n_ctx", "n_batch", "n_threads"):
         return int(value)
     if key in ("memory_budget_gb", "lock_timeout_s"):
         return float(value)

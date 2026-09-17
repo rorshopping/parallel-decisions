@@ -241,7 +241,35 @@ backend = "auto"              # "auto" | "mlx" | "torch" — see "NVIDIA GPU / C
 torch_dtype = "bfloat16"      # torch backend only: bfloat16 | float16 | float32
 torch_device = "cuda"         # torch backend only: "cuda" | "cpu" (default: auto-detect)
 cuda_graph = false            # torch backend only: replay repeated suffix passes as one CUDA graph
+n_ctx = 4096                  # llamacpp only: total unified KV cells
+n_batch = 512                 # llamacpp only: tokens per native decode
+n_threads = 4                 # llamacpp only: CPU threads (default min(8, CPU count))
 ```
+
+### Local GGUF / CPU (llamacpp backend)
+
+`backend="llamacpp"` is opt-in and requires an existing local Qwen2 GGUF file,
+plus `pip install ".[llamacpp]"` (pinned native binding 0.3.35). No model is
+downloaded. Pass the first shard for a split GGUF; companion shards must be
+alongside it. See [NOTES_GGUF.md](NOTES_GGUF.md) for the verified native contract,
+commands, evidence and limitations. `auto` still selects MLX/Torch as before.
+
+```python
+decider = Decider(model_id=r"C:\models\qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+                  backend="llamacpp", n_ctx=4096, n_batch=512, n_threads=4,
+                  max_fields_per_batch=8, max_collision_rows=8, warmup=False)
+```
+
+One logical context prefill feeds native sequence-ID/KV branches with ragged
+batched field suffixes and exact collision sequence scoring. `n_ctx` is total
+unified KV capacity, not a per-field multiplication; requests fail rather than
+truncate when prompt plus live suffix rows exceed it. `n_batch` limits tokens per
+native decode, and must accommodate the maximum field/collision row limit.
+`PD_N_CTX`, `PD_N_BATCH`, `PD_N_THREADS` follow normal configuration precedence.
+CPU only initially; CUDA Graphs, Torch options and explicit `memory_budget_gb`
+are rejected. `prepare`, `decide_with_prefix` and shared-prefix `decide_many` are
+explicitly unsupported. `warmup` adds no extra inference on this CPU backend.
+Raw scores and historical MLX accuracy are not GGUF/Gmail correctness guarantees.
 
 ### NVIDIA GPU / CPU (torch backend)
 
