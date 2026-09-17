@@ -1,6 +1,38 @@
 # Windows GGUF divergence investigation (2026-09-17)
 
-## Status: BLOCKED, no production fix justified
+## Update (2026-09-18): functional gate passed; independent native oracle pending
+
+The loader now explicitly sets `llama_model_params.use_extra_bufts=False`.
+On the same pinned 7B and 0.3.35 wheel, the original acceptance harness run
+**directly against the modified source**, without monkeypatches/launcher overrides,
+passed all **21/21 comparisons over 24 runs**, max distribution delta **0.0**,
+at unchanged `atol=0.0001`. Changed-context sensitivity was observed; the model
+checksum and imported source path were verified. Private report:
+`pd-patched-native-acceptance.json` (with sibling `.log`).
+
+The controlled full-schema diagnostic with this loader setting also showed
+identical target logits at limits 8/1/2. Its native trace retained one prefill,
+five-sequence ordinary and three-sequence collision batches, copy/removal calls,
+and unchanged root KV state (`pd-divergence-no-extra-bufts.{json,npz,log}`).
+The earlier override-only full acceptance is `pd-accept-no-extra-bufts.json`.
+
+**Bounded conclusion:** standard buffer types resolve the tested decision-row
+cross-limit failure, not arbitrary native numerical equivalence. A separate
+single-token probe still differed by about 0.711 raw logit between one/eight
+identical branches with extra buffer types disabled (repeats and peer branches
+were identical). The precise kernel-level cause is not established. Do not claim
+that repacking explains every observed difference or that a singleton reference
+is inherently correct. No serial fallback, rounding, tolerance change or prompt
+change was made. `test_llamacpp_loader.py` checks the loader argument before model
+creation; it does not replace native numerical tests.
+
+The acceptance harness deliberately retains
+`FUNCTIONAL_CONTRACT_PASS_NATIVE_PROOF_PENDING`. Self-reported telemetry alone
+is not independent native proof. The independent serial native teacher-forcing
+collision oracle below remains outstanding; full integration acceptance is not
+yet declared. Earlier statements in this file record the pre-fix investigation.
+
+## Historical status (2026-09-17): BLOCKED, no production fix justified
 
 Starting HEAD `a691967`, clean `integration/windows-gguf` worktree. Native acceptance
 report supplied by the owner failed at unchanged absolute tolerance **0.0001**.

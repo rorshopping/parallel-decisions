@@ -75,6 +75,11 @@ class LlamaCppRuntime:
         try:
             mp = native.llama_model_default_params()
             mp.n_gpu_layers = 0
+            # The pinned Windows CPU wheel needs standard buffer types for
+            # strict agreement across the tested decision-row batch limits.
+            # This does not guarantee arbitrary decode-shape equivalence;
+            # see NOTES_GGUF_DIVERGENCE.md for controls and remaining limits.
+            mp.use_extra_bufts = False
             model = stack.enter_context(closing(_internals.LlamaModel(
                 path_model=str(path), params=mp, verbose=self.verbose)))
             metadata = model.metadata()
