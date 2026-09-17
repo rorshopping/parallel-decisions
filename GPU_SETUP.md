@@ -14,6 +14,11 @@ On this Windows PC (RTX 2060 SUPER, 8 GB), using **Qwen2.5-0.5B-Instruct**:
 | CUDA full prefill → shared schema prefix | 88.5 → 61.9 ms/request, means | **1.43× throughput equivalent / 30% less latency**; 8 description-heavy fields, 405 prefix tokens, 10 pairs, fp16 | `benchmarks/prefix-results.json` |
 | Ordinary CUDA → CUDA Graph replay | 60.1 → 51.8 ms/request, medians | **1.16× / 14% less latency**; 8 synthetic boolean fields, 10 pairs, fp16 | `benchmarks/cuda-graph-results.json` |
 | Ordinary CUDA → CUDA Graph replay | 240.9 → 83.8 ms/request, medians | **2.88× / 65% less latency**; custom 27-field schema, 6 pairs, fp16 | `benchmarks/cuda-graph-27-results.json` |
+| Ordinary CUDA → CUDA Graph replay (retry) | 190.7 → 202.8 ms/request, medians | **6.3% MORE latency**; synthetic 27-field schema, 10 pairs, fp16 | `benchmarks/cuda-graph-retry-diagnostic.json` |
+
+**Integration default: leave CUDA Graphs off.** They are an optional experiment,
+not a guaranteed acceleration. The latest synthetic workload was slower with
+graphs; enable only after paired measurements on your app's actual inputs.
 
 **The 2.88× is an extra gain over an already GPU-accelerated path, not a CPU
 comparison.** It saves about 157 ms on that particular request. At one request
@@ -85,7 +90,7 @@ backend = "torch"
 model = "Qwen/Qwen2.5-0.5B-Instruct"
 torch_device = "cuda"
 torch_dtype = "float16"
-cuda_graph = true
+cuda_graph = false  # opt in only after measuring your app's workload
 max_fields_per_batch = 8
 lock_timeout_s = 60
 ```
@@ -110,7 +115,7 @@ from parallel_decisions import Decider, Schema
 decider = Decider(
     model_id="Qwen/Qwen2.5-0.5B-Instruct",
     backend="torch", torch_device="cuda", torch_dtype="float16",
-    cuda_graph=True, max_fields_per_batch=8,
+    cuda_graph=False, max_fields_per_batch=8,
 )
 schema = Schema({
     "category": {"type": "enum", "choices": ["BILLING", "SUPPORT"],
@@ -178,6 +183,15 @@ startup if your application starts a new process for each job.
   The small, no-download CUDA regression test still passed: one graph captured,
   three replays with changed inputs/lengths, eager logits matched within `1e-5`.
   That is a correctness check, not a representative-model speed measurement.
+- The subsequent diagnostic retry captured the **synthetic 27-field** shape:
+  eager **190.7 ms** vs graph **202.8 ms** p50 over 10 pairs (6.3% slower),
+  capture ~490 ms, identical answers and probabilities. The 8-field shape was
+  refused when CUDA reported zero free bytes, then the 27-field check reported
+  5,664 MiB free moments later without closing applications. These Windows/WDDM
+  readings do not establish an actual OOM or fragmentation. We did not change
+  the guard or stop processes. Raw evidence:
+  [`benchmarks/cuda-graph-retry-diagnostic.json`](benchmarks/cuda-graph-retry-diagnostic.json).
+  Leave graphs off unless your app's paired measurements show a benefit.
 - The earlier Chrome/Playwright lab fired 10 local HTTP requests and displayed
   model recommendations in the DOM: about **2.0 seconds** with one model process,
   **2.5 seconds** with two. It did not execute ten model-selected Playwright

@@ -11,8 +11,10 @@ as a local library with an MLX path for Apple Silicon and a Torch path for CUDA/
 explicit model/config choices and an explanation of CPU vs CUDA vs CUDA Graphs.
 On the RTX 2060 SUPER, warmed graph replay reduced median request latency from
 60.1 to 51.8 ms on one 8-field workload, and 240.9 to 83.8 ms on a custom 27-field
-workload. These are separate measurements, not a universal multiplier or a claim
-that browser clicks themselves became faster.
+workload. A later synthetic 27-field run was **slower** with graphs: 190.7 →
+202.8 ms. These are separate measurements, not a universal multiplier or a claim
+that browser clicks themselves became faster. **Leave graphs off for initial app
+integration; opt in only after measuring your actual workload.**
 
 ```python
 from parallel_decisions import Decider, Schema
@@ -329,6 +331,9 @@ CUDA graphs reduce per-kernel launch overhead, not the required GPU math. On an
 RTX 2060 SUPER with Qwen2.5-0.5B fp16, the recorded 8-field run gives suffix
 **24.1 → 16.0 ms** and total **60.1 → 51.8 ms** p50 (1.16×, 10 pairs). A later
 custom 27-field run gives total **240.9 → 83.8 ms** p50 (2.88×, 6 pairs).
+A subsequent **synthetic** 27-field run measured **190.7 → 202.8 ms** p50
+(10 pairs): graphs made latency **6.3% worse**. Keep them off for initial app
+integration and measure before opting in; field count alone does not predict gains.
 Capture costs about **187 / 283 ms** respectively, separately from these warmed
 measurements; prefill is not captured. The original synthetic 27-row attempt
 was refused for memory pressure and remains recorded as unavailable, not replaced
