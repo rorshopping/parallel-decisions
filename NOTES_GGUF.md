@@ -31,8 +31,10 @@ Decider(model_id=r"C:\models\qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
 
 - `build_prompt` and `Schema.compile` are used unchanged; full-prompt
   tokenization must contain each compiled suffix as an exact token continuation,
-  otherwise the request fails before prefill. BOS is added exactly once
-  (Qwen2: `add_bos=false`, the prompt supplies no BOS; verified native).
+  otherwise the request fails before prefill. BOS: the adapter requests
+  `add_bos`, and the Qwen2 GGUF vocab has `add_bos=false`, so prompt tokens
+  begin directly with ChatML 151644 — identical to HF tokenization, no double
+  BOS (verified read-only against the pinned model).
 - One logical context prefill on sequence 0 per `decide()` (native n_batch
   slices, counted in telemetry), then `llama_memory_seq_cp` to one independent
   sequence ID per decision row, then ragged time-major `llama_decode` batches
