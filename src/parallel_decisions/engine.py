@@ -53,6 +53,8 @@ class _LazyMLX:
 
 mx = _LazyMLX()
 
+# Public legacy constant: keep the MLX model ID stable for existing callers.
+# Decider resolves its fallback model only after selecting the backend.
 DEFAULT_MODEL = "mlx-community/Qwen2.5-7B-Instruct-4bit"
 DEFAULT_MEMORY_BUDGET_GB = 6.0
 MEMORY_HEADROOM = 0.65      # model + KV broadcast may use at most this share of RAM
@@ -148,7 +150,7 @@ class DecisionResult(dict):
 
 
 class Decider:
-    """Loads a local MLX model once and answers schemas against contexts.
+    """Loads a local MLX or Torch model once and answers schemas against contexts.
 
     One model, one call at a time: `decide()` takes a lock, so a threaded server
     cannot interleave two forward passes on the same MLX context (which surfaces as
@@ -156,6 +158,9 @@ class Decider:
 
     Any argument left as `None` is taken from `pd.toml` / `PD_*` environment
     variables when present, then from the module defaults. See `config.py`.
+    With no model configured, MLX uses the legacy `DEFAULT_MODEL` (7B 4-bit),
+    while Torch uses `Qwen/Qwen2.5-0.5B-Instruct`. Explicit/configured model IDs
+    are preserved, even if incompatible with the selected backend.
     """
 
     def __init__(self, model_id: str | None = None, *,
@@ -197,7 +202,14 @@ class Decider:
         self.torch_device = torch_device
         self.cuda_graph = bool(cfg.cuda_graph) if cuda_graph is None else bool(cuda_graph)
 
-        self.model_id = model_id or DEFAULT_MODEL
+        if not model_id:
+            if self.backend == "torch":
+                # This module, like the facade, imports no ML dependencies eagerly.
+                from .engine_torch import DEFAULT_TORCH_MODEL
+                model_id = DEFAULT_TORCH_MODEL
+            else:
+                model_id = DEFAULT_MODEL
+        self.model_id = model_id
         self.max_fields_per_batch = max(1, int(max_fields_per_batch or DEFAULT_MAX_FIELDS))
         self.memory_budget_bytes = int((memory_budget_gb or DEFAULT_MEMORY_BUDGET_GB) * (1024 ** 3))
         self.max_collision_rows = max(1, int(max_collision_rows or DEFAULT_MAX_COLLISION_ROWS))

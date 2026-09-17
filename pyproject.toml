@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "parallel-decisions"
 dynamic = ["version"]
-description = "Typed, locally-run LLM decisions on Apple Silicon (parallel constrained decoding)"
+description = "Typed, locally-run LLM decisions with MLX or PyTorch (parallel constrained decoding)"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -19,12 +19,15 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "mlx>=0.22",
-    "mlx-lm>=0.21",
+    "mlx>=0.22; sys_platform == 'darwin' and (platform_machine == 'arm64' or platform_machine == 'aarch64')",
+    "mlx-lm>=0.21; sys_platform == 'darwin' and (platform_machine == 'arm64' or platform_machine == 'aarch64')",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+# Install .[torch] for CUDA/CPU inference; select the CUDA wheel separately if needed.
+# The runtime uses Transformers 5's cache API. Bounds are not a tested-version matrix.
+torch = ["torch>=2.6", "transformers>=5.17,<6", "accelerate>=1.1"]
+dev = ["pytest>=8", "packaging>=23"]
 mcp = ["mcp>=1.0"]
 
 [project.urls]
