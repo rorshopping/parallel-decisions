@@ -71,15 +71,17 @@ In PowerShell, from the release checkout:
 cd C:\Users\Richard\Documents\Projects\parallel-decisions
 uv venv --python 3.12 .venv
 uv pip install --python .venv\Scripts\python.exe torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-uv pip install --python .venv\Scripts\python.exe transformers==5.17.0 accelerate "pytest>=8"
-uv pip install --python .venv\Scripts\python.exe -e . --no-deps
+uv pip install --python .venv\Scripts\python.exe -e ".[torch]" transformers==5.17.0 "pytest>=8"
 & .venv\Scripts\python.exe -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
 ```
 
-Why `--no-deps`? Current package metadata still requires MLX unconditionally and
-does not declare a Torch extra. Dependencies above are installed explicitly so
-Windows does not install an unusable MLX runtime. This is a documented packaging
-limitation, not a claim that a bare `pip install` supplies CUDA support.
+Install **`.[torch]`**, not just `.` for Torch inference. The extra supplies Torch,
+Transformers and Accelerate; MLX dependencies are restricted to Apple Silicon
+macOS. No `--no-deps` workaround is needed. Installing the CUDA wheel first selects
+the desired PyTorch build; the extra alone does not promise a specific CUDA build.
+For CPU-only integration, replace the first install command's index with
+`https://download.pytorch.org/whl/cpu`. The base package on Windows remains useful
+for schema/config/calibration utilities but does not install an inference backend.
 
 ### Recommended starting configuration
 
@@ -95,10 +97,12 @@ max_fields_per_batch = 8
 lock_timeout_s = 60
 ```
 
-**Set the model explicitly.** `backend="auto"` selects Torch on Windows, but the
-current `Decider()` default model ID is still an MLX 7B repository. Do not rely on
-that default for CUDA. Explicit fp16 is the tested starting point on this Turing
-GPU; automatic bf16 availability is not proof of native bf16 performance.
+**Pin the model for reproducible integrations.** `backend="auto"` selects Torch
+on Windows with `Qwen/Qwen2.5-0.5B-Instruct` as its fallback model. Apple Silicon
+retains the MLX 7B 4-bit default. Explicit/configured IDs take precedence and are
+not automatically converted between backends. Explicit fp16 is the tested
+starting point on this Turing GPU; reported bf16 availability is not proof of
+native bf16 performance.
 
 Start with 8 rows, then measure your actual schema. An unquantized 7B model needs
 roughly 14 GB for fp16 weights alone and does **not** fit this 8 GB card. No Torch

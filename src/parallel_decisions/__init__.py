@@ -1,4 +1,4 @@
-"""parallel-decisions: typed, locally-run LLM decisions.
+﻿"""parallel-decisions: typed, locally-run LLM decisions.
 
     from parallel_decisions import Decider, Schema
 
@@ -74,4 +74,4 @@ __all__ = [
     "UnsupportedPlatformError",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"

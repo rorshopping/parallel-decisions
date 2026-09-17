@@ -250,8 +250,11 @@ calibration machinery). With `backend = "auto"` (the default) an Apple Silicon
 Mac uses MLX; everything else uses torch with CUDA when available.
 
 Use the explicit Windows dependency installation in [GPU_SETUP.md](GPU_SETUP.md).
-The current package metadata still declares MLX unconditionally and does not
-install Torch automatically; that guide avoids installing an unusable MLX runtime.
+Install the **`torch` extra** for this backend (`pip install ".[torch]"` from a
+checkout). MLX dependencies are platform-conditioned to Apple Silicon macOS.
+The base package on other platforms supports non-inference utilities; it does not
+install Torch. With no model configured, Torch defaults to Qwen2.5-0.5B-Instruct
+while MLX retains its 7B 4-bit model. Explicit/configured model IDs always win.
 
 ```python
 from parallel_decisions import Decider

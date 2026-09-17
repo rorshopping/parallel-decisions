@@ -3,6 +3,31 @@
 All notable changes to `parallel-decisions`. The package follows
 [Semantic Versioning](https://semver.org/); `0.x` means the API can still move.
 
+## 0.3.1 — unreleased
+
+Integration-ready packaging for the torch backend.
+
+### Fixed
+
+- **Torch backend installs and defaults are now coherent.** A fresh
+  `pip install ".[torch]"` provides torch, transformers and accelerate; MLX
+  dependencies are conditioned to Apple Silicon macOS, so Windows/Linux users no
+  longer get an unusable MLX runtime. With no model configured, the torch backend
+  defaults to `Qwen/Qwen2.5-0.5B-Instruct` (MLX keeps the legacy 7B 4-bit
+  `DEFAULT_MODEL`); explicit/model config still wins.
+- `examples/serve.py` now accepts documented schema wrappers and serialized field
+  lists, validates context/body, and returns JSON 400/503 errors; `pd` keeps
+  JSON-only stdout with verbose logs on stderr, rejects empty contexts before
+  loading a model, and uses clean exit statuses.
+- Added model-free regression tests for default selection, emitted metadata,
+  loopback HTTP, lock contention, CLI JSON and MCP dictionary schemas.
+
+### Added
+
+- `INTEGRATION.md`: an application-integration guide (Python lifespan, schema
+  and prefix use, the local HTTP contract, CLI, failure handling, and confidence
+  caveats).
+
 ## 0.3.0 — 2026-09-16
 
 The torch backend: the same parallel constrained decoding on NVIDIA GPUs and CPU.
