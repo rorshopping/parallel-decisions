@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext, redirect_stdout
 import json
 import sys
 
@@ -19,7 +20,7 @@ from .calibration import (
     slices,
 )
 from .config import ConfigError, load_config
-from .engine import DEFAULT_MODEL, Decider
+from .engine import DEFAULT_MODEL, ConcurrencyError, Decider
 from .lint import lint_schema
 from .schema import Schema, SchemaError
 
@@ -27,13 +28,13 @@ from .schema import Schema, SchemaError
 def _read_context(args) -> str:
     if args.context_file:
         with open(args.context_file, encoding="utf-8") as fh:
-            return fh.read()
-    if args.context:
-        return args.context
-    # read stdin as a last resort
-    data = sys.stdin.read()
+            data = fh.read()
+    elif args.context is not None:
+        data = args.context
+    else:
+        data = sys.stdin.read()
     if not data.strip():
-        raise SystemExit("no context provided (use --context, --context-file, or stdin)")
+        raise ValueError("no context provided (use --context, --context-file, or stdin)")
     return data
 
 
@@ -96,9 +97,11 @@ def cmd_validate(args) -> int:
 def cmd_decide(args) -> int:
     schema = Schema.from_json(args.schema)
     context = _read_context(args)
-    decider = Decider(model_id=args.model, verbose=args.verbose or args.json is False,
-                      calibration=args.calibration, config=args.config)
-    result = decider.decide(context, schema)
+    # The CLI owns stdout: even verbose runtime/load logs belong on stderr in JSON mode.
+    with redirect_stdout(sys.stderr) if args.json else nullcontext():
+        decider = Decider(model_id=args.model, verbose=args.verbose or args.json is False,
+                          calibration=args.calibration, config=args.config)
+        result = decider.decide(context, schema)
 
     if args.json:
         payload = {"decisions": result.full_json()}
@@ -264,6 +267,15 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigError as exc:
         print(f"config error: {exc}", file=sys.stderr)
         return 2
+    except ConcurrencyError as exc:
+        print(f"model busy: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError) as exc:
+        print(f"input error: {exc}", file=sys.stderr)
+        return 2
+    except (RuntimeError, ImportError) as exc:
+        print(f"runtime error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
