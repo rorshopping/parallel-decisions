@@ -74,8 +74,9 @@ Mixed 5-row schema (2 boolean, 1 enum, 2 multi rows, 1 colliding enum):
   `parameters=7615616512`.
 - Reordering contexts and re-running as singleton chunks (`fields_per_batch=1`,
   `max_collision_rows=1`) produced identical selected answers; maximum
-  per-field probability difference 0.00164 (float reassociation). Do not promise
-  bit-identical probabilities across batch shapes.
+  per-field probability difference 0.00164 (cause was not established). The merged
+  strict acceptance subsequently FAILED; see NOTES_GGUF_DIVERGENCE.md. Do not
+  attribute the discrepancy to float reassociation without controlled evidence.
 - Wall time on this desktop CPU (not a throughput claim): ~3.4–3.8 s prefill,
   ~1.7–1.9 s suffix+collision per 105–108-token prompt, ~5.1–5.7 s total.
 - The model chose a poor multi-select subset in one context — the typed output
