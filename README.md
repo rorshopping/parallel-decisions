@@ -55,13 +55,15 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
   calibrator (`pd calibrate`) turns it into one you can threshold on, with the
   routing table to prove it.
 
-## Measured accuracy
+## Measured accuracy (historical MLX 7B evaluation)
 
 On all public example cases of TypeSafe's four eval workflows (20 cases, 373
 reference question-pairs), scored against their own reference — the consensus of
-GPT-6 Astra and Fable 5.1 — this package's default model reached **73.8%**
-(253/343 on the strict like-for-like subset), versus Jev at 86.6% and frontier
-models at 89–90%.
+GPT-6 Astra and Fable 5.1 — the **MLX default model (Qwen2.5-7B-Instruct-4bit)**
+reached **73.8%** (253/343 on the strict like-for-like subset), versus Jev at
+86.6% and frontier models at 89–90%. These numbers describe that specific
+evaluation. **They do not describe the torch backend's default
+`Qwen/Qwen2.5-0.5B-Instruct`, whose accuracy has not been scored on this suite.**
 
 That headline hides as much as it says, and the details are more useful than the
 total (all measured, see `evals/analysis/REPORT.md` in the research tree):
@@ -92,8 +94,9 @@ python3.12 -m venv .venv && .venv/bin/pip install -e .
 These installation commands are for Apple Silicon/MLX; its default 7B 4-bit
 model download is about 4.3 GB. Windows/NVIDIA installation is documented in
 [GPU_SETUP.md](GPU_SETUP.md#windows-installation-explicit-reproducible-route).
-Backend auto-selection uses Torch off Apple Silicon, but on Torch you must set a
-compatible model ID explicitly rather than use the MLX default.
+Backend auto-selection uses Torch (default `Qwen/Qwen2.5-0.5B-Instruct`) off
+Apple Silicon; Apple Silicon keeps the MLX 7B default. Pin an explicit model ID
+for reproducible deployments on either backend.
 
 ## Python API
 
@@ -383,11 +386,11 @@ def classify(ticket: str) -> dict:
     return _decider.decide(ticket, TICKET_SCHEMA).json()
 ```
 
-Swap the model per use case:
+Swap the model per use case (MLX backend):
 
 | model id | notes |
 |---|---|
-| `mlx-community/Qwen2.5-7B-Instruct-4bit` | default, best measured accuracy (73.8% recorded / 70.8% on the packaged path over 277 slots) |
+| `mlx-community/Qwen2.5-7B-Instruct-4bit` | MLX default, best measured accuracy (73.8% recorded / 70.8% on the packaged path over 277 slots) |
 | `mlx-community/Qwen2.5-1.5B-Instruct-4bit` | ~4x faster, noticeably weaker decisions |
 | `mlx-community/Qwen3.5-4B-OptiQ-4bit` | runs (hybrid linear attention, ~3 GB, constant 49 MB per row); accuracy not yet measured against the eval |
 
@@ -449,12 +452,13 @@ Two costs dominate:
 
 - **Probabilities are softmax over allowed answers**, not calibrated frequencies.
   Treat them as relative confidence until you fit a calibrator on your own labelled
-  data. Measured on the default model: raw confidence ranks correctness well but is
-  overconfident in level (AUROC 0.747; ECE 0.205, 14 answers at confidence 1.0000 of
-  which 2 were wrong), and post-hoc calibration took ECE to 0.150 out of sample on
-  188 labelled decisions. Acting on the most confident 25% carried a 6.4% error rate;
-  the most confident 50%, 12.8%. See [`CALIBRATION.md`](CALIBRATION.md) — including
-  why a "1% error rate" threshold was **not** reachable on that data.
+  data. Measured on the MLX 7B default model: raw confidence ranks correctness well
+  but is overconfident in level (AUROC 0.747; ECE 0.205, 14 answers at confidence
+  1.0000 of which 2 were wrong), and post-hoc calibration took ECE to 0.150 out of
+  sample on 188 labelled decisions. Acting on the most confident 25% carried a 6.4%
+  error rate; the most confident 50%, 12.8%. See
+  [`CALIBRATION.md`](CALIBRATION.md) — including why a "1% error rate" threshold
+  was **not** reachable on that data.
 - **The model has a listing-order preference.** It picks the first listed option in
   82% of choice fields, and is right 96.7% of the time when the correct option is
   first versus 24.5% when it is not. For choice fields, order your options by what
@@ -486,7 +490,7 @@ parallel-decisions/
 │   └── serve.py        # stdlib HTTP server, queued
 ├── tools/
 │   └── fit_calibration.py
-├── tests/              # 87 tests, no model needed
+├── tests/              # ~230 tests, no model needed
 ├── CHANGELOG.md
 └── AGENTS.md           # notes for AI coding agents working in this repo
 ```

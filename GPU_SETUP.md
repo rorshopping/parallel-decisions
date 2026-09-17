@@ -83,6 +83,12 @@ For CPU-only integration, replace the first install command's index with
 `https://download.pytorch.org/whl/cpu`. The base package on Windows remains useful
 for schema/config/calibration utilities but does not install an inference backend.
 
+**Measured acceptance baseline for this release:** one CPU wheel installation with
+torch **2.6.0+cpu** and transformers **5.17.0** passed real inference, prefix reuse
+and `decide_many` with automatic defaults; one CUDA session used torch
+**2.6.0+cu124** with the same transformers. Other versions within the extra's
+bounds are untested.
+
 ### Recommended starting configuration
 
 Create `pd.toml` in the directory from which you run the app:

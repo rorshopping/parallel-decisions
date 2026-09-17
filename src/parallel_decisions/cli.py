@@ -20,7 +20,7 @@ from .calibration import (
     slices,
 )
 from .config import ConfigError, load_config
-from .engine import DEFAULT_MODEL, ConcurrencyError, Decider
+from .engine import ConcurrencyError, Decider
 from .lint import lint_schema
 from .schema import Schema, SchemaError
 
@@ -208,9 +208,9 @@ def cmd_calibrate(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="pd", description="Typed decisions from a local MLX model")
+    parser = argparse.ArgumentParser(prog="pd", description="Typed decisions from a local LLM (MLX or torch)")
     parser.add_argument("--model", default=None,
-                        help=f"mlx-lm model id (default: pd.toml, else {DEFAULT_MODEL})")
+                        help="model id (default: pd.toml/env; MLX: 7B 4-bit Qwen2.5, torch: 0.5B Qwen2.5)")
     parser.add_argument("--config", default=None, help="path to pd.toml")
     sub = parser.add_subparsers(dest="command", required=True)
 

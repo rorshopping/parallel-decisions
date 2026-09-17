@@ -65,10 +65,12 @@ not verification of your changes.
   dtype, model and lengths, alternate paired order, preserve raw JSON. Do not
   multiply speedups from different workloads or claim browser-click speedups from
   HTTP requests plus DOM updates. `GPU_SETUP.md` is the evidence index.
-- Current limitations: Torch dependencies are not declared as an install extra;
-  `Decider` retains an MLX default model ID even off Mac; Torch fixed-row chunking
-  does not use MLX's adaptive memory budget. Document these, don't silently imply
-  they are fixed. Explicit model/device/fp16 settings are used in the GPU guide.
+- Current limitations: Torch fixed-row chunking does not use MLX's adaptive
+  memory budget; reported bf16 availability is not proof of native bf16
+  performance on Turing GPUs. The packaging limitations (no torch extra, MLX
+  default model off Mac) were fixed in 0.3.1; document any new gaps, don't
+  silently imply they are fixed. Explicit model/device/fp16 settings are used
+  in the GPU guide.
 - A 7B fp16 model does not fit 8 GB VRAM. The tested latency model is 0.5B;
   fp16 is the starting point on this Turing GPU, not auto-selected bf16.
 
