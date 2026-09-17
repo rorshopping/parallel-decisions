@@ -1,5 +1,20 @@
 # GGUF native acceptance execution (2026-09-17)
 
+## Final status after confirming rerun (run 4, repacking disabled)
+
+Run 4 (`native-acceptance-4.json`, user-approved confirming rerun) reproduced
+run 3 exactly: **21/21 original harness comparisons, max delta 0.0** at
+atol=1e-4, and the expanded full-row oracle failed with the bit-identical
+**0.0017988534479707052** tags delta (bool/enum < 6e-9, collision 4.35e-7).
+Both outcomes are deterministic across runs. Final state: the required original
+acceptance harness PASSES at the unchanged tolerance; the independent expanded
+oracle still fails, so overall native acceptance is **NOT green** and must not
+be reported as such. Oracle wall time is validation-only.
+
+Run 4 medians (ms): load 590.11, checksum 2661.26; limits 8/2/1 short
+prefill 4137/4834/5421, pass 2273/3555/4831, wall 6491/8400/11486;
+long prefill 13482/16540/15631, pass 2267/2645/4764, wall 15762/19199/20410.
+
 ## Current release gate: functional PASS, expanded oracle FAILED
 
 Final bounded run 3 completed with repacking disabled (`use_extra_bufts=False`):
