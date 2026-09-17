@@ -31,6 +31,32 @@ with a CPU latency cost. Three native runs total; no endless retries. Full
 model-free suite after changes: **257 passed, 10 skipped**. Evidence remains
 local in this worktree, with exact source hashes recorded inside each report.
 
+## Final minimal localization (no further inference scheduled)
+
+`scripts/diagnose_gguf_tags.py` compares all three tag rows for context A using
+branched decoding, sequence-0 split prompt/suffix decoding, and sequence-0 fused
+prompt+suffix decoding. Local report: `native-tags-diagnostic.json`.
+
+- Whole-vocabulary branch-versus-scalar-split maximum difference: **0.0** for
+  each of the three rows. This rules against branch/output remapping as the cause
+  of this reproduced discrepancy.
+- Actual full tokenization equals prompt IDs + compiled suffix IDs for every row.
+  Candidates are 1866 (`true`) and 3849 (`false`). Positive final batch-token
+  index and negative `get_logits_ith(-1)` outputs match exactly.
+- First differing candidate: `tags[0]`, token 1866, split/branch raw logit
+  **14.531972885131836**, fused raw logit **14.415637969970703**.
+- Split versus fused whole-vocabulary maximum differences by row:
+  **0.8474254608154297**, **0.8948554992675781**, **0.6756424903869629**.
+  All selected values stay the same. The discrepancy occurs without sequence
+  copies or nonzero sequence IDs, so changing branch token mapping is unsupported.
+- Exact underlying native kernel cause remains unverified. Do not generalize
+  this localization to accuracy or every possible schema/model.
+- The shell wrapper reported exit 1 while the JSON and final stdout completed;
+  the log shows PowerShell `NativeCommandError` from native stderr, no Python
+  traceback. Process exit status was not separately captured, so no exit-0 claim
+  is made for this diagnostic. Full acceptance reports retain their explicit
+  contract statuses; do not infer status from the wrapper alone.
+
 ## Earlier runs (historical failures, before repacking fix)
 
 The merged harness commits 1b1621b and 7ddb83d were cherry-picked as c84520c
