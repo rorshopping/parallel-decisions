@@ -9,6 +9,13 @@ Integration-ready packaging for the torch backend.
 
 ### Fixed
 
+- **Collision scoring is trie-batched (torch).** A field whose answers share a
+  first token previously scored one row per candidate through the prompt cache:
+  the 240-choice browser action space needed 248 rows in 33 batched passes
+  (2.7 s at 7k prompt tokens). Only trie nodes with children are scored now —
+  25 rows in 4 passes — cutting the pass stage to 0.38 s; the summed sequence
+  log-probabilities are unchanged and pinned by an equivalence test against the
+  implementation this replaced.
 - **Torch prefill is now chunked, bounding prompt memory on GPUs without an
   efficient SDPA kernel (Turing and older).** A long prompt previously ran one
   math-backend attention pass — 7.2k tokens took 11.1 s and peaked at 7.4 GiB on

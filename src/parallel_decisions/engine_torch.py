@@ -384,46 +384,97 @@ class TorchRuntime:
 
 
 def slice_decision(rt: TorchRuntime, cf: CompiledField, row_logits, temperature: float):
-    """Logit slice + softmax over the candidate first tokens, MLX-path semantics."""
+    """Logit slice + softmax over the candidate first tokens, MLX-path semantics.
+
+    Vectorized: one indexed gather + max over all candidates instead of a Python
+    ``float(tensor)`` per candidate, which forced a device sync for every choice
+    (240 syncs at browser-action cardinality).
+    """
     import torch
     import torch.nn.functional as F
 
-    scores = []
-    for ids in cf.candidate_ids:
-        scores.append(max(float(row_logits[i]) for i in ids) if ids else -1e9)
-    tensor = torch.tensor(scores, dtype=torch.float32) / max(temperature, 1e-4)
-    probs = F.softmax(tensor, dim=-1).tolist()
-    return probs
+    if not cf.candidate_ids:
+        return []
+    width = max(1, max(len(ids) for ids in cf.candidate_ids))
+    tokens = torch.zeros((len(cf.candidate_ids), width), dtype=torch.long,
+                         device=row_logits.device)
+    valid = torch.zeros((len(cf.candidate_ids), width), dtype=torch.bool,
+                        device=row_logits.device)
+    for i, ids in enumerate(cf.candidate_ids):
+        if ids:
+            tokens[i, :len(ids)] = torch.tensor(ids, dtype=torch.long,
+                                                device=row_logits.device)
+            valid[i, :len(ids)] = True
+    scores = row_logits[tokens].masked_fill(~valid, float("-inf")).max(dim=1).values.float()
+    # Match the scalar path's sentinel for candidates with no usable token.
+    scores = scores.masked_fill(~valid.any(dim=1), -1e9)
+    probs = F.softmax(scores / max(temperature, 1e-4), dim=-1)
+    return probs.tolist()
 
 
 def resolve_collision_rows(rt: TorchRuntime, cache, groups: Sequence[CompiledField],
                            max_collision_rows: int):
-    """Exact sequence log-probabilities for fields whose answers share a first token."""
-    rows: list[list[int]] = []
-    spans: list[tuple[str, int, int, int]] = []
-    for cf in groups:
-        suffix_len = len(cf.suffix_tokens)
-        for ci, seq in enumerate(cf.sequences):
-            rows.append(cf.suffix_tokens + seq)
-            spans.append((cf.row_name, ci, suffix_len, suffix_len + len(seq)))
+    """Exact sequence log-probabilities for fields whose answers share a first token.
 
+    Scores a trie of the candidate token sequences instead of one row per
+    candidate: a row is only needed for each node that has children, and the
+    log-probability of a sequence is the sum along its path (the distribution for
+    a child is the last-position log-softmax of its parent's row). For the
+    browser action space (240 numbered choices, 1-3 digit tokens each) this turns
+    248 rows / 33 batched passes into ~25 rows / 4 passes, while computing the
+    same sums. `tests/test_engine_torch.py` pins the equivalence against the
+    element-wise implementation this replaced.
+    """
     import torch
-    import torch.nn.functional as F
 
     log_probs: dict[str, dict[int, float]] = {}
     pad = rt.pad_id()
-    cursor = 0
-    while cursor < len(rows):
-        batch_rows = rows[cursor:cursor + max_collision_rows]
-        batch_spans = spans[cursor:cursor + max_collision_rows]
-        logits, arr = rt.batched_pass(cache, batch_rows, pad)
-        log_softmax = F.log_softmax(logits.float(), dim=-1)
-        for local, (name, ci, start, end) in enumerate(batch_spans):
-            total = 0.0
-            for pos in range(start, end):
-                total += float(log_softmax[local, pos - 1, int(arr[local, pos])])
-            log_probs.setdefault(name, {})[ci] = total
-        cursor += len(batch_rows)
+
+    for cf in groups:
+        suffix = list(cf.suffix_tokens)
+        root: dict = {"children": {}, "terms": [], "total": 0.0}
+        for ci, seq in enumerate(cf.sequences):
+            node = root
+            for token in seq:
+                node = node["children"].setdefault(
+                    token, {"children": {}, "terms": [], "total": 0.0})
+            node["terms"].append(ci)
+
+        # Breadth-first order guarantees every parent is scored before its
+        # children, so chunks can cut anywhere.
+        order: list[tuple[dict, list[int]]] = []
+        queue: list[tuple[dict, list[int]]] = [(root, list(suffix))]
+        while queue:
+            node, prefix = queue.pop(0)
+            if node["children"]:
+                order.append((node, prefix))
+                for token, child in node["children"].items():
+                    queue.append((child, prefix + [token]))
+
+        for start in range(0, len(order), max(1, max_collision_rows)):
+            chunk = order[start:start + max(1, max_collision_rows)]
+            rows = [prefix for _node, prefix in chunk]
+            logits, _arr = rt.batched_pass(cache, rows, pad)
+            row_index = torch.arange(len(chunk), device=logits.device)
+            last = torch.tensor([len(prefix) - 1 for _node, prefix in chunk],
+                                device=logits.device)
+            band = logits[row_index, last, :].float()               # (rows, vocab)
+            log_dist = band - band.logsumexp(dim=-1, keepdim=True)
+            for local, (node, _prefix) in enumerate(chunk):
+                child_tokens = list(node["children"].keys())
+                picks = torch.tensor(child_tokens, device=logits.device)
+                values = log_dist[local][picks].tolist()            # one sync per node
+                for token, value in zip(child_tokens, values):
+                    child = node["children"][token]
+                    child["total"] = node["total"] + float(value)
+
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            for ci in node["terms"]:
+                log_probs.setdefault(cf.row_name, {})[ci] = node["total"]
+            stack.extend(node["children"].values())
+
     return log_probs
 
 

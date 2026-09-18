@@ -480,9 +480,10 @@ Two costs dominate:
   evidence".
 - **Choice collisions.** If two choices start with the same token, a single logit
   cannot separate them. The library detects this exactly (the candidate token is the
-  one the model actually emits after the field's prefix) and scores the full
-  sequences in one extra batched pass — correct, but slower. `pd validate
-  --check-tokens` reports collisions with concrete rename suggestions.
+  one the model actually emits after the field's prefix) and scores the sequences
+  down a token trie — only nodes that have children get a row, so 240 numbered
+  choices cost ~25 rows in 4 batched passes instead of one row per choice. `pd
+  validate --check-tokens` reports collisions with concrete rename suggestions.
 - **One answer per field** unless the field is `multi`, which is one yes/no decision
   per choice. No free-form text or numeric output.
 
