@@ -174,6 +174,7 @@ class Decider:
                  backend: str | None = None,
                  torch_dtype: str | None = None,
                  torch_device: str | None = None,
+                 torch_quant: str | None = None,
                  cuda_graph: bool | None = None,
                  n_ctx: int | None = None,
                  n_batch: int | None = None,
@@ -200,9 +201,14 @@ class Decider:
         backend = backend or getattr(cfg, "backend", None)
         torch_dtype = torch_dtype or getattr(cfg, "torch_dtype", None)
         torch_device = torch_device or getattr(cfg, "torch_device", None)
+        torch_quant = torch_quant or getattr(cfg, "torch_quant", None)
+        if torch_quant is not None:
+            from .engine_torch import normalize_torch_quant
+            torch_quant = normalize_torch_quant(torch_quant)
         self.backend = _select_backend(backend)
         self.torch_dtype = torch_dtype
         self.torch_device = torch_device
+        self.torch_quant = torch_quant
         self.cuda_graph = bool(cfg.cuda_graph) if cuda_graph is None else bool(cuda_graph)
 
         self.n_ctx = n_ctx if n_ctx is not None else cfg.n_ctx
@@ -357,7 +363,8 @@ class Decider:
 
         t0 = time.perf_counter()
         self._torch_rt = TorchRuntime(self.model_id, dtype=self.torch_dtype,
-                                      device=self.torch_device, verbose=self.verbose,
+                                      device=self.torch_device, quant=self.torch_quant,
+                                      verbose=self.verbose,
                                       cuda_graph=self.cuda_graph)
         self._torch_rt.load()
         self._model = self._torch_rt.model

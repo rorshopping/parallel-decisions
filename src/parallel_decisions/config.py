@@ -19,6 +19,7 @@ Precedence (highest first):
     backend = "auto"        # "auto" | "mlx" | "torch"
     torch_dtype = "bfloat16"  # torch backend: bfloat16 | float16 | float32
     torch_device = "cuda"     # torch backend: "cuda" | "cpu" (default: auto)
+    torch_quant = "nf4"       # torch backend: nf4 | fp4 (bitsandbytes 4-bit, CUDA only)
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ ENV_NAMES = {
     "backend": "PD_BACKEND",
     "torch_dtype": "PD_TORCH_DTYPE",
     "torch_device": "PD_TORCH_DEVICE",
+    "torch_quant": "PD_TORCH_QUANT",
     "cuda_graph": "PD_CUDA_GRAPH",
     "n_ctx": "PD_N_CTX",
     "n_batch": "PD_N_BATCH",
@@ -74,6 +76,7 @@ class Config:
     backend: str | None = None
     torch_dtype: str | None = None
     torch_device: str | None = None
+    torch_quant: str | None = None
     cuda_graph: bool | None = None
     n_ctx: int | None = None
     n_batch: int | None = None
@@ -150,7 +153,7 @@ def _coerce(key: str, value: Any) -> Any:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in BOOL_TRUE
-    if key in ("model", "calibration", "log"):
+    if key in ("model", "calibration", "log", "torch_quant"):
         return str(value)
     return value
 
