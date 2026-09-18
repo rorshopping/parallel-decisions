@@ -240,6 +240,7 @@ log = "json"                  # one JSON line per call on stderr
 backend = "auto"              # "auto" | "mlx" | "torch" — see "NVIDIA GPU / CPU (torch backend)"
 torch_dtype = "bfloat16"      # torch backend only: bfloat16 | float16 | float32
 torch_device = "cuda"         # torch backend only: "cuda" | "cpu" (default: auto-detect)
+torch_quant = "nf4"           # torch backend only: nf4 | fp4 (bitsandbytes 4-bit; CUDA only)
 cuda_graph = false            # torch backend only: replay repeated suffix passes as one CUDA graph
 n_ctx = 4096                  # llamacpp only: total unified KV cells
 n_batch = 512                 # llamacpp only: tokens per native decode

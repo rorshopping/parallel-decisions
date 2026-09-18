@@ -3,6 +3,16 @@
 All notable changes to `parallel-decisions`. The package follows
 [Semantic Versioning](https://semver.org/); `0.x` means the API can still move.
 
+## 0.5.0 — unreleased
+
+- Opt-in 4-bit torch loading: `torch_quant = "nf4" | "fp4"` (bitsandbytes),
+  explicit kwarg > `PD_TORCH_QUANT` > `pd.toml` > full precision. CUDA only;
+  unknown values, non-CUDA devices and missing bitsandbytes/accelerate fail
+  closed. With `torch_quant` unset the loader is unchanged.
+- 4-bit modules are placed via `device_map` and the loader skips `.to()` for
+  them. Contract, limits and the verified/unverified list are in
+  `NOTES_TORCH_4BIT.md`; raw scores remain uncalibrated ranking signals.
+
 ## 0.4.0 — unreleased
 
 - Opt-in `backend="llamacpp"` for local Qwen2 GGUF CPU inference using native
