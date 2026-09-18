@@ -9,6 +9,14 @@ Integration-ready packaging for the torch backend.
 
 ### Fixed
 
+- **Torch prefill is now chunked, bounding prompt memory on GPUs without an
+  efficient SDPA kernel (Turing and older).** A long prompt previously ran one
+  math-backend attention pass — 7.2k tokens took 11.1 s and peaked at 7.4 GiB on
+  an RTX 2060 SUPER, which Windows can silently page into shared memory for a
+  10–100× slowdown. Prompts are now read in `torch_prefill_chunk` segments
+  (default 2048; `PD_TORCH_PREFILL_CHUNK`, `0` disables) through the same KV
+  cache: 0.70 s / 1.6 GiB at 1024-token segments in the same measurement.
+  Last-token logits differ by at most 0.04 from fp16 reassociation.
 - **Torch backend installs and defaults are now coherent.** A fresh
   `pip install ".[torch]"` provides torch, transformers and accelerate; MLX
   dependencies are conditioned to Apple Silicon macOS, so Windows/Linux users no

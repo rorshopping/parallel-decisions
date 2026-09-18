@@ -19,6 +19,7 @@ Precedence (highest first):
     backend = "auto"        # "auto" | "mlx" | "torch"
     torch_dtype = "bfloat16"  # torch backend: bfloat16 | float16 | float32
     torch_device = "cuda"     # torch backend: "cuda" | "cpu" (default: auto)
+    torch_prefill_chunk = 2048  # torch: prompt segment size; 0 disables chunking
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ ENV_NAMES = {
     "backend": "PD_BACKEND",
     "torch_dtype": "PD_TORCH_DTYPE",
     "torch_device": "PD_TORCH_DEVICE",
+    "torch_prefill_chunk": "PD_TORCH_PREFILL_CHUNK",
     "cuda_graph": "PD_CUDA_GRAPH",
 }
 ENV_CONFIG = "PD_CONFIG"
@@ -71,6 +73,7 @@ class Config:
     backend: str | None = None
     torch_dtype: str | None = None
     torch_device: str | None = None
+    torch_prefill_chunk: int | None = None
     cuda_graph: bool | None = None
     source: str | None = None
 

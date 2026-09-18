@@ -174,6 +174,7 @@ class Decider:
                  backend: str | None = None,
                  torch_dtype: str | None = None,
                  torch_device: str | None = None,
+                 torch_prefill_chunk: int | None = None,
                  cuda_graph: bool | None = None,
                  verbose: bool = False):
         cfg = config if isinstance(config, Config) else load_config(config)
@@ -197,9 +198,12 @@ class Decider:
         backend = backend or getattr(cfg, "backend", None)
         torch_dtype = torch_dtype or getattr(cfg, "torch_dtype", None)
         torch_device = torch_device or getattr(cfg, "torch_device", None)
+        if torch_prefill_chunk is None:
+            torch_prefill_chunk = getattr(cfg, "torch_prefill_chunk", None)
         self.backend = _select_backend(backend)
         self.torch_dtype = torch_dtype
         self.torch_device = torch_device
+        self.torch_prefill_chunk = torch_prefill_chunk
         self.cuda_graph = bool(cfg.cuda_graph) if cuda_graph is None else bool(cuda_graph)
 
         if not model_id:
@@ -322,7 +326,8 @@ class Decider:
         t0 = time.perf_counter()
         self._torch_rt = TorchRuntime(self.model_id, dtype=self.torch_dtype,
                                       device=self.torch_device, verbose=self.verbose,
-                                      cuda_graph=self.cuda_graph)
+                                      cuda_graph=self.cuda_graph,
+                                      prefill_chunk=self.torch_prefill_chunk)
         self._torch_rt.load()
         self._model = self._torch_rt.model
         self._tokenizer = self._torch_rt.tokenizer

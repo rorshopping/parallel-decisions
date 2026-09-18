@@ -26,6 +26,14 @@ from .schema import CompiledField
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
 
+# Long prompts are read in segments through one growing KV cache. On GPUs without
+# an efficient SDPA kernel (Turing and older) the attention math backend
+# materialises the full prompt-by-prompt score matrix in one pass: 7k prompt
+# tokens peaked at 7.4 GiB and 11 s on an RTX 2060 SUPER, while the same prompt
+# in 1024-token segments peaked at 1.6 GiB and took 0.7 s (fp16, Qwen2.5-0.5B).
+# 0 disables chunking.
+DEFAULT_PREFILL_CHUNK = 2048
+
 
 class TorchCudaGraphCache:
     """Bounded, runtime-local suffix graphs; a shape's first use stays eager.
@@ -201,7 +209,7 @@ class TorchRuntime:
 
     def __init__(self, model_id: str | None = None, *, dtype: str | None = None,
                  device: str | None = None, verbose: bool = False,
-                 cuda_graph: bool = False):
+                 cuda_graph: bool = False, prefill_chunk: int | None = None):
         self.model_id = model_id or DEFAULT_TORCH_MODEL
         self._dtype_pref = dtype
         self._device_pref = device
@@ -212,6 +220,8 @@ class TorchRuntime:
         self.device = None
         self.dtype = None
         self.cuda_graph = cuda_graph
+        self.prefill_chunk = (DEFAULT_PREFILL_CHUNK if prefill_chunk is None
+                              else max(0, int(prefill_chunk)))
         self.graph_cache = TorchCudaGraphCache(self)
 
     def _log(self, message: str) -> None:
@@ -258,8 +268,27 @@ class TorchRuntime:
 
         With `cache` given, the tokens are appended to it (shared-prefix reuse);
         the caller owns the cache and must pass a private copy.
+
+        Prompts longer than `prefill_chunk` are read in segments through that same
+        cache. Attention memory becomes O(chunk^2) instead of O(prompt^2), which
+        matters on GPUs without an efficient SDPA kernel; the probabilities can
+        shift by fp16 round-off (observed max logit delta 0.04 at 7k tokens).
         """
         torch = self.torch
+        chunk = self.prefill_chunk or 0
+        if chunk and len(tokens) > chunk:
+            total = 0
+            segments = 0
+            for start in range(0, len(tokens), chunk):
+                part = tokens[start:start + chunk]
+                inputs = torch.tensor([part], dtype=torch.long, device=self.device)
+                with torch.no_grad():
+                    out = self.model(inputs, use_cache=True, past_key_values=cache)
+                cache = out.past_key_values
+                total += len(part)
+                segments += 1
+            self._log(f"prefill {total} tokens in {segments} chunks of {chunk}")
+            return cache, total
         inputs = torch.tensor([tokens], dtype=torch.long, device=self.device)
         with torch.no_grad():
             out = self.model(inputs, use_cache=True, past_key_values=cache)

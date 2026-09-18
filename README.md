@@ -241,6 +241,7 @@ backend = "auto"              # "auto" | "mlx" | "torch" — see "NVIDIA GPU / C
 torch_dtype = "bfloat16"      # torch backend only: bfloat16 | float16 | float32
 torch_device = "cuda"         # torch backend only: "cuda" | "cpu" (default: auto-detect)
 cuda_graph = false            # torch backend only: replay repeated suffix passes as one CUDA graph
+torch_prefill_chunk = 2048    # torch backend only: prompt segment size; 0 disables chunking
 ```
 
 ### NVIDIA GPU / CPU (torch backend)
@@ -320,6 +321,19 @@ Low-precision reassociation can change probabilities and near-tied decisions.
 Run `python scripts/measure_prefix_speedup.py --output prefix-results.json` to
 record raw paired measurements. CUDA timers now synchronize the device and
 `pass_ms` includes collision scoring, unlike older asynchronous phase timings.
+
+### Chunked prefill (torch backend, default on)
+
+On GPUs without an efficient SDPA kernel (Turing and older), PyTorch's attention
+math backend materialises the full prompt-by-prompt score matrix in one prefill
+pass, and Windows silently pages the overflow into shared system memory — a
+10–100× slowdown, not a clean OOM. Measured on an RTX 2060 SUPER, Qwen2.5-0.5B
+fp16, 7.2k-token prompt: one pass **11.1 s / 7.4 GiB peak**, the same prompt in
+1024-token segments through one KV cache **0.70 s / 1.6 GiB** (2048-token
+segments: 0.91 s / 2.2 GiB). Last-token logits differed by at most 0.04
+(fp16 reassociation). `torch_prefill_chunk = N` (or `PD_TORCH_PREFILL_CHUNK=N`)
+sets the segment size; `0` disables chunking and restores the single-pass path.
+Chunked reads also apply when extending a shared prefix.
 
 ### CUDA graphs for repeated suffix passes (torch backend, experimental)
 
