@@ -3,8 +3,9 @@
 This is a synchronous, local inference library, not a hosted API. Inference can
 run offline after model assets are cached. Install the appropriate backend first;
 see [GPU_SETUP.md](GPU_SETUP.md) for the Windows/Torch setup and memory limits.
-Torch defaults to `Qwen/Qwen2.5-0.5B-Instruct`; pin an explicit model ID for
-reproducible deployments.
+With the `laya` extra installed, `Decider()` runs the Laya decision model by
+default; without it, Torch defaults to `Qwen/Qwen2.5-0.5B-Instruct`. Pin an
+explicit model ID (or `backend="torch"` / `"mlx"`) for reproducible deployments.
 The HTTP and MCP scripts below are checkout examples, not installed `pd` commands.
 
 ## Python: one model per application lifespan

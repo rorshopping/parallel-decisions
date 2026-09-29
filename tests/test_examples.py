@@ -67,7 +67,9 @@ def test_invoice_review_builds_a_collision_free_schema():
     schema = Schema(fields)
     assert len(schema) == len(invoice.DOCUMENT_FIELDS) + 2 * len(invoice.PER_LINE)
     assert len(sources) == len(schema)
-    report = lint_schema(schema, Decider(warmup=False).tokenizer_for_schema)
+    # the token-collision lint is a causal-LM check; pin the MLX backend so the
+    # test does not depend on whether the laya package happens to be installed
+    report = lint_schema(schema, Decider(warmup=False, backend="mlx").tokenizer_for_schema)
     assert not report.collisions, [(f.name, f.groups) for f in report.collisions]
     assert not report.blocking
 

@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Opt-in smoke test against the real model. Downloads ~4.3 GB on first run.
+"""Opt-in smoke test against the real model.
 
     .venv/bin/python smoke_test.py [model-id]
+
+Downloads the backend's model on first use (the MLX default is ~4.3 GB; the
+Laya path fetches the selected checkpoints instead).
 
 Checks, in order:
   1. a plain 3-field decision (boolean + enum)
   2. a multi-select field (one yes/no decision per choice)
-  3. a field with a deliberate token collision (exercises the exact-scoring path)
+  3. a field with a deliberate token collision (the causal backends'
+     exact-scoring path; on Laya the choice is simply one typed question)
   4. calibration: a fitted calibrator changes the number, not the answer
-  5. latency telemetry and chunking are populated
+  5. latency telemetry and row counts are populated
 """
 
 from __future__ import annotations

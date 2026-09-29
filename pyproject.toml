@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "parallel-decisions"
 dynamic = ["version"]
-description = "Typed, locally-run LLM decisions with MLX or PyTorch (parallel constrained decoding)"
+description = "Typed, locally-run decisions with Laya, MLX or PyTorch"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-keywords = ["mlx", "apple-silicon", "llm", "classification", "calibration", "local-first"]
+keywords = ["laya", "mlx", "apple-silicon", "llm", "classification", "calibration", "local-first"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -24,6 +24,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The default model path: the non-autoregressive Laya decision model (torch-based).
+laya = ["laya>=0.3.21,<0.4"]
 # Install .[torch] for CUDA/CPU inference; select the CUDA wheel separately if needed.
 # The runtime uses Transformers 5's cache API. Bounds are not a tested-version matrix.
 torch = ["torch>=2.6", "transformers>=5.17,<6", "accelerate>=1.1"]

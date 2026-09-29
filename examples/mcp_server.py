@@ -87,12 +87,14 @@ def validate_schema_tool(schema: dict) -> str:
 
     Returns:
         JSON: colliding fields with rename suggestions. No model load.
+        With the laya backend (the default when the package is installed) the
+        token check does not apply; the error explains why.
     """
     from parallel_decisions.lint import lint_schema
 
     try:
         report = lint_schema(_as_schema(schema), _decider().tokenizer_for_schema)
-    except (SchemaError, ValueError) as exc:
+    except (SchemaError, ValueError, RuntimeError) as exc:
         return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
     return json.dumps(report.to_dict(), default=str)
 

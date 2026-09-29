@@ -4,17 +4,21 @@ Notes for AI coding agents (and humans) who will extend this package.
 
 ## What this is
 
-A small library that turns a local MLX LLM into a typed decision engine:
-context + schema in, typed answers with probabilities out, computed as batched
-forward passes. It is a packaged, validated version of the "parallel constrained
-decoding" prototype, with the best-performing local model we measured
-(Qwen2.5-7B-Instruct-4bit, 73.8% agreement on TypeSafe's public eval suite), plus
-confidence calibration so the probabilities can be thresholded.
+A small library that turns a local model into a typed decision engine: context +
+schema in, typed answers with probabilities out — one batched forward pass for
+Laya, batched constrained decoding for the causal engines. It is a packaged,
+validated version of the "parallel constrained decoding" prototype, with the
+best-performing local causal model we measured (Qwen2.5-7B-Instruct-4bit, 73.8%
+agreement on TypeSafe's public eval suite), confidence calibration so the
+probabilities can be thresholded, and — since 0.3.1 — the Laya
+non-autoregressive decision model as the default path when its package is
+installed.
 
 Read `README.md` and `GPU_SETUP.md` first for the user-facing API and Windows
-setup. This file is about modifying the code. The project now also has a Torch
+setup. This file is about modifying the code. The project also has a Torch
 CUDA/CPU backend, shared-prefix reuse and opt-in StaticCache CUDA Graph replay.
-The older MLX accuracy numbers below do not describe the 0.5B CUDA latency model.
+The older MLX accuracy numbers below do not describe the 0.5B CUDA latency model
+or the Laya checkpoints.
 
 ## Windows / CUDA handoff (2026-09-17)
 
@@ -39,9 +43,22 @@ reinstall the shared venv against a different worktree while another agent uses 
 PowerShell commands may print harmless stderr warnings as error records; inspect
 `$LASTEXITCODE` immediately after Python. Do not truncate failing tracebacks or use
 `cmd /c "... & echo %ERRORLEVEL%"` (expansion can report a stale exit status).
-The latest documented suite is 149 passed / 3 skipped on this CUDA machine; counts
+The latest documented suite is 301 passed / 3 skipped on this CUDA machine; counts
 vary with optional dependencies and hardware. A pass using another checkout is
 not verification of your changes.
+
+The shared venv does **not** have `laya` installed; the Snipledger2 venv does
+(`C:\Users\Richard\Documents\Projects\Snipledger2\src\SnipLedger.AI\.venv`), and
+the `convaiinnovations/laya` checkpoints are already in the Hugging Face cache.
+A real end-to-end Laya check (no download) is therefore:
+
+```powershell
+$env:PYTHONPATH = "C:\Users\Richard\Documents\Projects\parallel-decisions\src"
+& "C:\Users\Richard\Documents\Projects\Snipledger2\src\SnipLedger.AI\.venv\Scripts\python.exe" `
+  -m pytest -q tests/test_laya_engine.py   # passes both with and without laya installed
+& "C:\Users\Richard\Documents\Projects\Snipledger2\src\SnipLedger.AI\.venv\Scripts\python.exe" `
+  -c "from parallel_decisions import Decider, Schema; d = Decider(); print(d.backend, d.model_id)"
+```
 
 ### Torch-specific implementation invariants
 
@@ -95,6 +112,13 @@ engine.py       Decider: load (RAM-aware KV budget), decide() = one prefill, the
                 -> slice logits -> FieldValue. Multi rows fold into list values.
                 Colliding fields go through _resolve_collisions(): one extra batched
                 pass scoring the full answer sequences. Then optional calibration.
+engine_laya.py  The default model path when the `laya` package is installed.
+                plan_schema(): Field -> Laya question (enum -> choice, boolean ->
+                noul, multi -> one noul per choice at `name[i]`). LayaRuntime wraps
+                laya.Router (predict / predict_batch); values_from_answers() maps
+                answers back to FieldValue (probability = Laya's calibrated
+                answer_confidence; multi rows are P(include) and fold through
+                Decider._assemble_multi). No torch import at module scope.
 config.py       pd.toml + PD_* env vars; explicit argument > env > file > default.
 lint.py         collision lint with concrete rename advice (no model load needed).
 prompts.py      build_prompt: ChatML, descriptions + option lists, one `{`.
@@ -129,7 +153,18 @@ cli.py          `pd validate` / `decide` / `calibrate` / `config`.
 - **One model, one call at a time.** `decide()` holds a lock; the second caller
   waits or raises `ConcurrencyError` after `lock_timeout_s`.
 - **`import parallel_decisions` must not need MLX.** `mx` is a lazy proxy in
-  `engine.py`; schema/calibration/config/lint work on any machine.
+  `engine.py`; schema/calibration/config/lint work on any machine. The same holds
+  for Laya and Torch: `engine_laya.py` imports neither at module scope, and the
+  `laya` package is only reached through `LayaRuntime._build_router()`.
+- **The Laya answer contract is exact.** `probability` is the model's
+  `answer_confidence` (its calibrated `max(p)`), `distribution` is the raw
+  per-answer distribution, and a `multi` row's probability is P(include) so it
+  folds through the same `_assemble_multi` as the causal rows: decisions use raw
+  P(true) >= 0.5, calibration uses the distribution. A missing or unknown answer
+  raises `LayaDecisionError`; never invent a value. Automatic routing and
+  checkpoint pinning live in `engine_laya.pinned_model` and go through Router's
+  own aliases; do not re-implement its model table. Tests must stub the router
+  (`tests/test_laya_engine.py`) — no download, no torch.
 - **Version has one source of truth**: `__version__` in `__init__.py`, read by
   pyproject's `dynamic` version. `tests/test_packaging.py` enforces it.
 
@@ -137,11 +172,14 @@ cli.py          `pd validate` / `decide` / `calibrate` / `config`.
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ".[dev]"
-.venv/bin/pytest                      # 134 tests, no model needed
+uv pip install --python .venv/bin/python -e ".[dev,laya]"   # drop ,laya for the causal backends
+.venv/bin/pytest                      # ~300 tests, no model needed
 .venv/bin/pd validate examples/fraud.json --check-tokens  # tokenizer only, no model
 .venv/bin/pd decide --schema examples/fraud.json --context "..."   # needs the model
 ```
+
+`pd validate --check-tokens` prints a note and skips the token lint on the Laya
+backend (there are no candidate tokens); the check is causal-LM specific.
 
 `tests/test_docs.py` keeps the README honest (its python blocks must parse, its
 commands must exist, every `pd.toml` key must be documented), and
@@ -152,11 +190,15 @@ assume more memory; respect the chunking design.
 
 ## Testing policy
 
-- `tests/` must stay runnable **without** MLX, a model download, or the research
-  tree present (the prompt-equivalence test skips itself when the tree is absent).
-  Stub tokenizers are fine and encouraged — `tests/test_schema.py::_VocabTokenizer`
-  is a longest-match tokenizer that models space attachment, which is the thing
-  that actually matters for the candidate logic.
+- `tests/` must stay runnable **without** MLX, PyTorch, `laya`, a model download,
+  or the research tree present (the prompt-equivalence test skips itself when the
+  tree is absent). Stub tokenizers are fine and encouraged —
+  `tests/test_schema.py::_VocabTokenizer` is a longest-match tokenizer that models
+  space attachment, which is the thing that actually matters for the candidate
+  logic. Stub the Laya router the same way (`tests/test_laya_engine.py`), and keep
+  `auto`-backend tests deterministic with
+  `monkeypatch.setattr(engine_laya, "laya_available", ...)` so a machine with the
+  package installed answers the same as one without.
 - Model-dependent checks belong in `examples/` or as opt-in scripts, not in pytest.
 - If you change `engine.py`, run `examples/basic.py` (or `pd decide`) and check the
   timings: prefill scales with context, the batched pass stays roughly flat as

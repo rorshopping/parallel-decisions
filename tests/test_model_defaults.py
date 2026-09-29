@@ -8,7 +8,9 @@ import pytest
 import parallel_decisions
 from parallel_decisions import Config, Decider
 from parallel_decisions import engine
+from parallel_decisions import engine_laya
 from parallel_decisions.config import ENV_NAMES
+from parallel_decisions.engine_laya import DEFAULT_LAYA_MODEL
 from parallel_decisions.engine_torch import DEFAULT_TORCH_MODEL
 
 
@@ -19,11 +21,15 @@ def isolated_config(monkeypatch, tmp_path):
     path = tmp_path / "pd.toml"
     path.write_text("", encoding="utf-8")
     monkeypatch.setenv("PD_CONFIG", str(path))
-    # Construction must remain useful even if neither backend is installed.
+    # Default tests pin the causal backends; the Laya-preferring `auto` has its
+    # own tests below, so the platform table stays deterministic on a machine
+    # that happens to have the laya package installed.
+    monkeypatch.setattr(engine_laya, "laya_available", lambda: False)
+    # Construction must remain useful even if no backend is installed.
     real_import = builtins.__import__
 
     def guard(name, *args, **kwargs):
-        if name.split(".")[0] in {"mlx", "mlx_lm", "torch", "transformers"}:
+        if name.split(".")[0] in {"mlx", "mlx_lm", "torch", "transformers", "laya"}:
             raise AssertionError(f"constructor imported runtime dependency: {name}")
         return real_import(name, *args, **kwargs)
 
@@ -47,16 +53,35 @@ def test_auto_backend_default(monkeypatch, system, machine, backend, model):
     assert decider._model is None
     assert decider._tokenizer is None
     assert decider._torch_rt is None
+    assert decider._laya_rt is None
+
+
+@pytest.mark.parametrize("system,machine", [
+    ("win32", "AMD64"),
+    ("linux", "aarch64"),
+    ("darwin", "arm64"),
+])
+def test_auto_prefers_laya_when_it_is_installed(monkeypatch, system, machine):
+    monkeypatch.setattr(engine_laya, "laya_available", lambda: True)
+    monkeypatch.setattr(engine.sys, "platform", system)
+    monkeypatch.setattr(engine.platform, "machine", lambda: machine)
+    decider = Decider()
+    assert (decider.backend, decider.model_id) == ("laya", DEFAULT_LAYA_MODEL)
+    assert decider._laya_rt is None
+
+    explicit = Decider(backend="mlx" if machine == "arm64" else "torch")
+    assert explicit.backend in ("mlx", "torch")
 
 
 @pytest.mark.parametrize("backend,model", [
     ("torch", DEFAULT_TORCH_MODEL), ("mlx", engine.DEFAULT_MODEL),
+    ("laya", DEFAULT_LAYA_MODEL),
 ])
 @pytest.mark.parametrize("source", ["argument", "config", "environment", "file"])
 def test_default_follows_resolved_backend(monkeypatch, backend, model, source):
     kwargs = {}
     if source == "argument":
-        kwargs = {"backend": backend, "config": Config(backend="mlx" if backend == "torch" else "torch")}
+        kwargs = {"backend": backend, "config": Config(backend="mlx" if backend != "mlx" else "torch")}
     elif source == "config":
         kwargs = {"config": Config(backend=backend)}
     elif source == "environment":
@@ -68,7 +93,7 @@ def test_default_follows_resolved_backend(monkeypatch, backend, model, source):
     assert (decider.backend, decider.model_id) == (backend, model)
 
 
-@pytest.mark.parametrize("backend", ["mlx", "torch"])
+@pytest.mark.parametrize("backend", ["mlx", "torch", "laya"])
 def test_model_precedence_is_argument_then_env_then_file(monkeypatch, backend):
     path = os.environ["PD_CONFIG"]
     with open(path, "w", encoding="utf-8") as fh:
@@ -79,7 +104,7 @@ def test_model_precedence_is_argument_then_env_then_file(monkeypatch, backend):
     assert Decider("argument/model", backend=backend).model_id == "argument/model"
 
 
-@pytest.mark.parametrize("backend", ["mlx", "torch"])
+@pytest.mark.parametrize("backend", ["mlx", "torch", "laya"])
 def test_config_object_remains_pre_resolved(monkeypatch, backend):
     monkeypatch.setenv("PD_MODEL", "env/model")
     cfg = Config(model="config/model", backend=backend)

@@ -13,6 +13,11 @@ How a call works
 
 The JSON is assembled from the selected values; it is never generated token by token,
 so keys and types cannot be malformed.
+
+The facade also drives the Laya backend (`engine_laya.py`): a non-autoregressive
+decision model that answers the same schemas as typed questions in one forward
+pass. `_select_backend("auto")` prefers it whenever the `laya` package is
+importable; the MLX and Torch causal engines stay selectable for compatibility.
 """
 
 from __future__ import annotations
@@ -63,12 +68,17 @@ DEFAULT_MAX_COLLISION_ROWS = 8
 
 
 def _select_backend(backend: str | None) -> str:
-    """Resolve 'auto' to mlx on Apple Silicon, torch everywhere else."""
+    """Resolve 'auto': Laya when installed, MLX on Apple Silicon, torch elsewhere."""
     choice = (backend or "auto").strip().lower()
-    if choice in ("mlx", "torch"):
+    if choice in ("mlx", "torch", "laya"):
         return choice
     if choice not in ("auto", ""):
-        raise ValueError(f"backend must be 'auto', 'mlx' or 'torch', got {backend!r}")
+        raise ValueError(
+            f"backend must be 'auto', 'laya', 'mlx' or 'torch', got {backend!r}")
+    from . import engine_laya   # lazy: engine_laya imports this module
+
+    if engine_laya.laya_available():
+        return "laya"
     if sys.platform == "darwin" and platform.machine() in ("arm64", "aarch64"):
         return "mlx"
     return "torch"
@@ -150,7 +160,7 @@ class DecisionResult(dict):
 
 
 class Decider:
-    """Loads a local MLX or Torch model once and answers schemas against contexts.
+    """Loads a local Laya, MLX or Torch model once and answers schemas against contexts.
 
     One model, one call at a time: `decide()` takes a lock, so a threaded server
     cannot interleave two forward passes on the same MLX context (which surfaces as
@@ -158,9 +168,11 @@ class Decider:
 
     Any argument left as `None` is taken from `pd.toml` / `PD_*` environment
     variables when present, then from the module defaults. See `config.py`.
-    With no model configured, MLX uses the legacy `DEFAULT_MODEL` (7B 4-bit),
-    while Torch uses `Qwen/Qwen2.5-0.5B-Instruct`. Explicit/configured model IDs
-    are preserved, even if incompatible with the selected backend.
+    With no model configured, `auto` prefers Laya when the `laya` package is
+    importable (model default `convaiinnovations/laya`, auto-routing between its
+    English and multilingual checkpoints), MLX uses the legacy `DEFAULT_MODEL`
+    (7B 4-bit), and Torch uses `Qwen/Qwen2.5-0.5B-Instruct`. Explicit/configured
+    model IDs are preserved, even if incompatible with the selected backend.
     """
 
     def __init__(self, model_id: str | None = None, *,
@@ -176,6 +188,7 @@ class Decider:
                  torch_device: str | None = None,
                  torch_prefill_chunk: int | None = None,
                  cuda_graph: bool | None = None,
+                 laya_device: str | None = None,
                  verbose: bool = False):
         cfg = config if isinstance(config, Config) else load_config(config)
         self.config = cfg
@@ -198,11 +211,13 @@ class Decider:
         backend = backend or getattr(cfg, "backend", None)
         torch_dtype = torch_dtype or getattr(cfg, "torch_dtype", None)
         torch_device = torch_device or getattr(cfg, "torch_device", None)
+        laya_device = laya_device or getattr(cfg, "laya_device", None)
         if torch_prefill_chunk is None:
             torch_prefill_chunk = getattr(cfg, "torch_prefill_chunk", None)
         self.backend = _select_backend(backend)
         self.torch_dtype = torch_dtype
         self.torch_device = torch_device
+        self.laya_device = laya_device
         self.torch_prefill_chunk = torch_prefill_chunk
         self.cuda_graph = bool(cfg.cuda_graph) if cuda_graph is None else bool(cuda_graph)
 
@@ -211,6 +226,9 @@ class Decider:
                 # This module, like the facade, imports no ML dependencies eagerly.
                 from .engine_torch import DEFAULT_TORCH_MODEL
                 model_id = DEFAULT_TORCH_MODEL
+            elif self.backend == "laya":
+                from .engine_laya import DEFAULT_LAYA_MODEL
+                model_id = DEFAULT_LAYA_MODEL
             else:
                 model_id = DEFAULT_MODEL
         self.model_id = model_id
@@ -226,6 +244,7 @@ class Decider:
         self._model = None
         self._tokenizer = None
         self._torch_rt = None
+        self._laya_rt = None
         self._kv_bytes_per_token: int | None = None
         self._kv_constant_bytes_per_row: int = 0
         self._model_bytes: int | None = None
@@ -243,8 +262,15 @@ class Decider:
         `pd validate --check-tokens` and the MCP lint tool only need to tokenize, so
         they must not pull a multi-gigabyte model into memory. On the torch backend
         (or older `mlx-lm`) there is no tokenizer-only entry point; falling back to
-        `load()` is correct, just heavier.
+        `load()` is correct, just heavier. The Laya backend has no token-candidate
+        compilation at all, so this raises instead of loading a model for nothing.
         """
+        if self.backend == "laya":
+            raise RuntimeError(
+                "the laya backend has no tokenizer-only mode: it answers typed "
+                "choice/noul questions instead of decoding tokens, so the "
+                "token-collision lint does not apply. Use backend=\"mlx\" or "
+                "\"torch\" for that check.")
         if self._tokenizer is None:
             if self.backend == "torch" or _select_backend(
                     getattr(self.config, "backend", None)) == "torch":
@@ -271,8 +297,8 @@ class Decider:
     def _check_platform(self) -> None:
         if os.environ.get("PD_ALLOW_NON_ARM") in ("1", "true", "yes"):
             return
-        if self.backend == "torch":
-            return  # the torch backend exists precisely for non-Apple-Silicon hosts
+        if self.backend in ("torch", "laya"):
+            return  # Laya and the torch port run on any CUDA/CPU host
         machine = platform.machine()
         if machine not in ("arm64", "aarch64"):
             raise UnsupportedPlatformError(
@@ -290,6 +316,9 @@ class Decider:
         return self
 
     def _load_unlocked(self) -> None:
+        if self.backend == "laya":
+            self._load_laya()
+            return
         if self.backend == "torch":
             self._load_torch()
             return
@@ -356,6 +385,27 @@ class Decider:
                 rt.torch.cuda.synchronize()
         except Exception as exc:  # pragma: no cover - warmup is best-effort
             self._log(f"warmup skipped: {exc}")
+
+    def _load_laya(self) -> None:
+        """Load via the Laya runtime (engine_laya.LayaRuntime)."""
+        from .engine_laya import LayaRuntime
+
+        t0 = time.perf_counter()
+        self._laya_rt = LayaRuntime(self.model_id, device=self.laya_device,
+                                    preload=self.warmup, verbose=self.verbose)
+        self._laya_rt.load()
+        self._model = self._laya_rt.router
+        self._tokenizer = None
+        self._model_bytes = None
+        self._kv_bytes_per_token = None
+        self._kv_constant_bytes_per_row = 0
+        elapsed = time.perf_counter() - t0
+        self._log(f"laya backend ready ({self.model_id}, "
+                  f"device {self.laya_device or 'auto'}) in {elapsed:.1f}s")
+        self.log_event("load", backend="laya", device=str(self.laya_device or "auto"),
+                       seconds=round(elapsed, 3), model_bytes=None,
+                       memory_budget_bytes=self.memory_budget_bytes,
+                       config=self.config.source)
 
     def _clamp_memory_budget(self) -> None:
         """Keep the model plus its KV broadcast below a share of physical RAM.
@@ -449,7 +499,11 @@ class Decider:
 
         `load()` needs the real tokenizer that came with the weights; using a
         separately loaded one risks a mismatch, so the model load wins here.
+        The Laya backend has no tokenizer; this raises with the same hint as
+        `load_tokenizer()` instead of returning `None`.
         """
+        if self.backend == "laya":
+            self.load_tokenizer()      # raises: no tokenizer-only mode
         return self.load()._tokenizer
 
     @property
@@ -530,9 +584,46 @@ class Decider:
             schema = Schema(schema)
         self.load()
         with self._acquire_lock("decide"):
+            if self.backend == "laya":
+                return self._decide_laya_locked(context, schema, temperature)
             if self.backend == "torch":
                 return self._decide_torch_locked(context, schema, temperature)
             return self._decide_locked(context, schema, temperature)
+
+    def _decide_laya_locked(self, context: str, schema: Schema,
+                            temperature: float) -> DecisionResult:
+        t_start = time.perf_counter()
+        self._active_fields = schema.fields
+        if temperature != 1.0:
+            self._log(f"temperature={temperature} is ignored by the laya backend "
+                      f"(the model ships its own calibrated temperature scaling)")
+        out = self._laya_rt.decide(context, schema)
+        values = out["values"]
+        if self.calibrator is not None:  # same monotone semantics as the other backends
+            values = {name: self._apply_calibration(self._schema_field(name), fv)
+                      for name, fv in values.items()}
+        result = DecisionResult(
+            values,
+            model=out["model"],
+            latency_ms=(time.perf_counter() - t_start) * 1000,
+            prefill_ms=0.0,                # Laya reads the state in one pass
+            pass_ms=out["inference_ms"],
+            fields_evaluated=out["rows"],
+            chunks=1,
+            calibrated=self.calibrator is not None,
+        )
+        result.telemetry = {"backend": "laya", "device": self.laya_device or "auto",
+                            "routed": out["routed"],
+                            "prompt_tokens": out["prompt_tokens"]}
+        self.log_event("decide", backend="laya", routed=out["routed"],
+                       fields=len(schema), rows=out["rows"], chunks=1,
+                       context_chars=len(context), prompt_tokens=out["prompt_tokens"],
+                       prefill_ms=0.0, pass_ms=round(out["inference_ms"], 1),
+                       latency_ms=round(result.latency_ms, 1),
+                       calibrated=self.calibrator is not None,
+                       calibration_kind=self.calibrator.kind if self.calibrator else None,
+                       shared_prefix=False)
+        return result
 
     def _decide_torch_locked(self, context: str, schema: Schema,
                              temperature: float) -> DecisionResult:
@@ -751,6 +842,14 @@ class Decider:
         """
         if not isinstance(schema, Schema):
             schema = Schema(schema)
+        if self.backend == "laya":
+            # Laya keeps no KV cache: every call re-reads the state, so a "prefix"
+            # only routes decide_with_prefix() back to decide() (and decide_many
+            # batches instead). Keeping the API identical avoids special cases in
+            # callers that share one pipeline across backends.
+            self.load()
+            return PromptPrefix(decider=self, schema=schema, cache=None,
+                                prefix_tokens=[], compiled=[])
         self.load()
         if self.backend == "torch":
             from .engine_torch import prepare_torch
@@ -802,6 +901,8 @@ class Decider:
             raise ValueError("context must be a non-empty string")
         if prefix.decider is not self:
             raise ValueError("this prefix belongs to a different Decider")
+        if self.backend == "laya":
+            return self.decide(context, prefix.schema, temperature=temperature)
         if prefix.cache is None and self.backend != "torch":
             return self.decide(context, prefix.schema, temperature=temperature)
 
@@ -889,18 +990,28 @@ class Decider:
                     shared_prefix: bool = False) -> list[DecisionResult]:
         """Decide the same schema against several contexts.
 
-        With `shared_prefix=True` the schema block is prefilled once and reused
-        (`prepare()` / `decide_with_prefix()`), which removes most of the prefill cost
-        when many contexts share a schema and are shorter than it — tickets, receipts,
-        emails. Off by default because the prefix holds memory for the whole loop.
+        With the Laya backend this is one batched `predict_batch` call: Laya
+        shares forward passes across states, so batching is the throughput win
+        (the per-result `latency_ms` is the batch wall time amortized, with
+        `telemetry["batch_ms"]` keeping the total). `shared_prefix` does not
+        apply there — Laya keeps no KV cache to reuse.
 
-        Batching the contexts into one forward pass is *not* implemented: that needs
-        per-row sequence lengths in the KV cache, and `mlx-lm`'s forward path does not
-        accept an attention mask, so a padded batch would attend over the padding.
+        On the causal backends, `shared_prefix=True` prefills the schema block
+        once and reuses it (`prepare()` / `decide_with_prefix()`), which removes
+        most of the prefill cost when many contexts share a schema and are
+        shorter than it — tickets, receipts, emails. Off by default because the
+        prefix holds memory for the whole loop.
+
+        Batching the contexts into one forward pass is *not* implemented for
+        MLX: that needs per-row sequence lengths in the KV cache, and `mlx-lm`'s
+        forward path does not accept an attention mask, so a padded batch would
+        attend over the padding.
         """
         if not isinstance(schema, Schema):
             schema = Schema(schema)
         contexts = list(contexts)
+        if self.backend == "laya":
+            return self._decide_many_laya(contexts, schema)
         if not shared_prefix:
             return [self.decide(ctx, schema, temperature=temperature) for ctx in contexts]
         prefix = self.prepare(schema)
@@ -909,6 +1020,50 @@ class Decider:
                     for ctx in contexts]
         finally:
             prefix.release()
+
+    def _decide_many_laya(self, contexts: Sequence[str],
+                          schema: Schema) -> list[DecisionResult]:
+        if not contexts:
+            return []
+        for context in contexts:
+            if not isinstance(context, str) or not context.strip():
+                raise ValueError("context must be a non-empty string")
+        self.load()
+        with self._acquire_lock("decide_many"):
+            t_start = time.perf_counter()
+            self._active_fields = schema.fields
+            outs = self._laya_rt.decide_many(contexts, schema,
+                                             batch_size=self.max_fields_per_batch)
+            results: list[DecisionResult] = []
+            for out in outs:
+                values = out["values"]
+                if self.calibrator is not None:
+                    values = {name: self._apply_calibration(self._schema_field(name), fv)
+                              for name, fv in values.items()}
+                result = DecisionResult(
+                    values,
+                    model=out["model"],
+                    latency_ms=out["latency_ms"],
+                    prefill_ms=0.0,
+                    pass_ms=out["latency_ms"],
+                    fields_evaluated=out["rows"],
+                    chunks=1,
+                    calibrated=self.calibrator is not None,
+                )
+                result.telemetry = {"backend": "laya", "device": self.laya_device or "auto",
+                                    "routed": out["routed"],
+                                    "prompt_tokens": out["prompt_tokens"],
+                                    "batch": out["batch"],
+                                    "batch_ms": round(out["batch_ms"], 3)}
+                results.append(result)
+            self.log_event("decide", backend="laya", batch=len(contexts),
+                           fields=len(schema), rows=outs[0]["rows"] if outs else 0,
+                           chunks=1,
+                           latency_ms=round((time.perf_counter() - t_start) * 1000, 1),
+                           calibrated=self.calibrator is not None,
+                           calibration_kind=self.calibrator.kind if self.calibrator else None,
+                           shared_prefix=False)
+        return results
 
     # ------------------------------------------------------------- internals
     def _auto_chunk_size(self, prompt_tokens: int) -> int:

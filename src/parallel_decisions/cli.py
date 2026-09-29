@@ -69,6 +69,12 @@ def cmd_validate(args) -> int:
             print(f"  {f.name}: enum, {len(f.choices)} choices")
     if args.check_tokens:
         decider = Decider(model_id=args.model, warmup=False, config=args.config)
+        if decider.backend == "laya":
+            print()
+            print("backend 'laya': these fields are answered as typed choice/noul questions,")
+            print("so the causal-token collision check does not apply. Use backend 'mlx' or")
+            print("'torch' to lint candidate tokens instead.")
+            return 0
         report = lint_schema(schema, decider.tokenizer_for_schema)
         if report.rows != len(schema):
             print(f"  ({report.rows} decision rows: multi-select fields expand per choice)")
@@ -115,7 +121,12 @@ def cmd_decide(args) -> int:
         print()
         print(json.dumps(result.json(), indent=2, default=str))
         print()
-        cal = "calibrated" if result.calibrated else "raw softmax (not calibrated)"
+        if result.calibrated:
+            cal = "calibrated"
+        elif result.telemetry.get("backend") == "laya":
+            cal = "Laya answer confidence (fitted on their data, not yours)"
+        else:
+            cal = "raw softmax (not calibrated)"
         print(f"model={result.model} latency={result.latency_ms:.0f}ms "
               f"(prefill {result.prefill_ms:.0f} + passes {result.pass_ms:.0f}, "
               f"{result.chunks} chunk(s)); confidence: {cal}")
@@ -208,9 +219,11 @@ def cmd_calibrate(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="pd", description="Typed decisions from a local LLM (MLX or torch)")
+    parser = argparse.ArgumentParser(prog="pd", description="Typed decisions from a local model (Laya, MLX or torch)")
     parser.add_argument("--model", default=None,
-                        help="model id (default: pd.toml/env; MLX: 7B 4-bit Qwen2.5, torch: 0.5B Qwen2.5)")
+                        help="model id or Laya checkpoint (default: pd.toml/env; Laya: "
+                             "'convaiinnovations/laya' auto-routing, MLX: 7B 4-bit Qwen2.5, "
+                             "torch: 0.5B Qwen2.5)")
     parser.add_argument("--config", default=None, help="path to pd.toml")
     sub = parser.add_subparsers(dest="command", required=True)
 

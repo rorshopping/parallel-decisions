@@ -154,19 +154,35 @@ def test_platform_guard_rejects_non_arm(monkeypatch):
 
 
 def test_auto_backend_selects_torch_off_mac(monkeypatch):
+    from parallel_decisions import engine_laya
     from parallel_decisions.engine import _select_backend
 
+    monkeypatch.setattr(engine_laya, "laya_available", lambda: False)
     monkeypatch.setattr("sys.platform", "win32")
     monkeypatch.setattr("platform.machine", lambda: "x86_64")
     assert _select_backend("auto") == "torch"
 
 
 def test_auto_backend_selects_mlx_on_apple_silicon(monkeypatch):
+    from parallel_decisions import engine_laya
     from parallel_decisions.engine import _select_backend
 
+    monkeypatch.setattr(engine_laya, "laya_available", lambda: False)
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr("platform.machine", lambda: "arm64")
     assert _select_backend("auto") == "mlx"
+
+
+def test_laya_device_precedence(tmp_path, monkeypatch):
+    from parallel_decisions.engine import Decider
+
+    path = tmp_path / "pd.toml"
+    path.write_text('backend = "laya"\nlaya_device = "cpu"\n', encoding="utf-8")
+    monkeypatch.delenv("PD_LAYA_DEVICE", raising=False)
+    assert Decider(config=str(path)).laya_device == "cpu"
+    monkeypatch.setenv("PD_LAYA_DEVICE", "cuda")
+    assert Decider(config=str(path)).laya_device == "cuda"
+    assert Decider(config=str(path), laya_device="cpu").laya_device == "cpu"
 
 
 def test_backend_argument_overrides_config(monkeypatch):

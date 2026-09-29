@@ -1,11 +1,16 @@
 # parallel-decisions
 
-**Turn a local LLM into a typed decision engine.** Give it a context and a small
+**Turn a local model into a typed decision engine.** Give it a context and a small
 schema of questions; get back typed answers with probabilities — as one batched
 forward pass, with JSON that cannot be malformed.
 
-Built on the "parallel constrained decoding" idea behind Jev / TypeSafe AI, packaged
-as a local library with an MLX path for Apple Silicon and a Torch path for CUDA/CPU.
+Two model paths share one schema/calibration/CLI API:
+
+- **Laya (the default when installed)** — the non-autoregressive
+  `convaiinnovations/laya` decision checkpoints: one forward pass answers every
+  typed question, routed per language, with calibrated confidences.
+- **MLX / Torch causal LLMs** — the "parallel constrained decoding" idea behind
+  Jev / TypeSafe AI: MLX on Apple Silicon, Torch for CUDA/CPU.
 
 **Windows/NVIDIA users: start with [GPU_SETUP.md](GPU_SETUP.md)** for installation,
 explicit model/config choices and an explanation of CPU vs CUDA vs CUDA Graphs.
@@ -37,7 +42,7 @@ print(result.json())           # {"category": "billing", "priority": "P2", "need
 Two commands to a working call on Apple Silicon (Windows: see the GPU guide above):
 
 ```bash
-uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
+uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e ".[laya]"
 .venv/bin/pd decide --schema examples/fraud.json \
   --context "wire transfer to Cyprus, new device, Tor exit node"
 ```
@@ -48,12 +53,71 @@ uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -e .
   from allowed answers and assembled in code, so keys and types are always valid.
 - **Batched questions.** The context is prefilled once; decision rows are evaluated
   in batched passes. Extra fields, chunking and colliding answers can add time and memory.
-- **Local and free.** Runs on Apple Silicon with MLX or CUDA/CPU with Torch. No API
-  keys are required; inference can run offline once model assets are cached.
-- **Calibratable probabilities.** Each answer carries a softmax over its allowed
-  choices. That is a ranking signal, not a probability of being right — the
-  calibrator (`pd calibrate`) turns it into one you can threshold on, with the
-  routing table to prove it.
+- **Local and free.** Runs with Laya on CUDA/CPU, on Apple Silicon with MLX or with
+  Torch anywhere else. No API keys are required; inference can run offline once
+  model assets are cached.
+- **Calibratable probabilities.** Each answer carries a confidence. On the causal
+  backends that is a softmax ranking signal, not a probability of being right;
+  Laya ships its own calibrated `answer_confidence`. Either way the calibrator
+  (`pd calibrate`) turns it into a number you can threshold on, with the routing
+  table to prove it.
+
+## The default model: Laya
+
+When the `laya` package is installed, `Decider()` runs the Laya decision model
+(`convaiinnovations/laya`): non-autoregressive ModernBERT-family checkpoints that
+answer every typed question in one forward pass. `auto` routing sends English text
+to the `english` checkpoint and other languages/scripts to `multilingual`, so no
+routing code is needed on your side. Install the extra from a checkout:
+
+```bash
+uv pip install --python .venv/bin/python -e ".[laya]"
+# or: pip install "parallel-decisions[laya]"
+```
+
+Model assets are fetched by `laya`/`huggingface_hub` on first use and run offline
+from the Hugging Face cache afterwards.
+
+```python
+from parallel_decisions import Decider, Schema
+
+decider = Decider()                 # Laya, auto-routing (English <-> multilingual)
+decider = Decider("multilingual")   # pin one checkpoint
+decider = Decider("english", laya_device="cpu")
+
+result = decider.decide(context, schema)
+result["category"].probability      # Laya's calibrated answer_confidence
+result.telemetry["routed"]          # which checkpoint answered this call
+```
+
+Accepted model specs: the bundle id `convaiinnovations/laya` (or `auto`/`default`)
+for automatic routing; `english`/`en`, `multilingual`/`multi`/`ml` or
+`typed-decisions`/`typed` to pin a checkpoint; or a standalone
+`convaiinnovations/laya-*` repo id. `laya_device = "cuda" | "cpu"` (or
+`PD_LAYA_DEVICE`) selects the device; the default is Laya's own auto-detection.
+`warmup = true` preloads the checkpoints routing can reach so the first request
+does not pay a cold load. The causal engines stay available with
+`backend="mlx"` / `backend="torch"`.
+
+Laya-specific notes:
+
+- `probability` is Laya's `answer_confidence` — the calibrated `max(p)` the Laya
+  project measures and gates on, temperature-scaled per question type and
+  language. It is fitted on *their* benchmark, not your domain; fit a `Calibrator`
+  on your own labelled rows before thresholding. `raw_probability` keeps the same
+  value until then.
+- A checkpoint reads one window (512 tokens for `english`, 1024 for
+  `multilingual`/`typed-decisions`) and truncates longer text. For long documents,
+  extract the relevant text first; the causal backends chunk over long contexts
+  instead.
+- `multi` fields become one yes/no question per choice and fold with exactly the
+  causal backends' semantics; choice descriptions become the criteria Laya scores.
+- `decide_many` sends every context through one batched `predict_batch` call.
+  `shared_prefix` does not apply (there is no KV cache to reuse) and is ignored.
+- `temperature=...` is accepted for API compatibility and ignored: Laya applies
+  its own calibrated temperature scaling.
+- The token-collision machinery (`pd validate --check-tokens`, `lint.py`) is
+  causal-LM specific and does not apply: Laya never emits tokens.
 
 ## Measured accuracy (historical MLX 7B evaluation)
 
@@ -63,7 +127,8 @@ GPT-6 Astra and Fable 5.1 — the **MLX default model (Qwen2.5-7B-Instruct-4bit)
 reached **73.8%** (253/343 on the strict like-for-like subset), versus Jev at
 86.6% and frontier models at 89–90%. These numbers describe that specific
 evaluation. **They do not describe the torch backend's default
-`Qwen/Qwen2.5-0.5B-Instruct`, whose accuracy has not been scored on this suite.**
+`Qwen/Qwen2.5-0.5B-Instruct`, whose accuracy has not been scored on this suite,
+nor the Laya checkpoints (which publish their own benchmarks).**
 
 That headline hides as much as it says, and the details are more useful than the
 total (all measured, see `evals/analysis/REPORT.md` in the research tree):
@@ -83,20 +148,20 @@ in the research repo.
 ## Install
 
 ```bash
-# editable, from a checkout
+# editable, from a checkout (add the laya extra for the default model path)
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -e ".[dev]"
+uv pip install --python .venv/bin/python -e ".[dev,laya]"
 
 # or plain pip
-python3.12 -m venv .venv && .venv/bin/pip install -e .
+python3.12 -m venv .venv && .venv/bin/pip install -e ".[laya]"
 ```
 
-These installation commands are for Apple Silicon/MLX; its default 7B 4-bit
-model download is about 4.3 GB. Windows/NVIDIA installation is documented in
+With the `laya` extra, `auto` selects Laya (see above). Without it, backend
+auto-selection keeps the causal engines: Torch off Apple Silicon (default
+`Qwen/Qwen2.5-0.5B-Instruct`) and MLX on Apple Silicon (its default 7B 4-bit model
+download is about 4.3 GB). Windows/NVIDIA installation is documented in
 [GPU_SETUP.md](GPU_SETUP.md#windows-installation-explicit-reproducible-route).
-Backend auto-selection uses Torch (default `Qwen/Qwen2.5-0.5B-Instruct`) off
-Apple Silicon; Apple Silicon keeps the MLX 7B default. Pin an explicit model ID
-for reproducible deployments on either backend.
+Pin an explicit model ID for reproducible deployments on any backend.
 
 ## Python API
 
@@ -140,8 +205,8 @@ schema = Schema({
 ```python
 from parallel_decisions import Decider
 
-decider = Decider()                      # default model
-decider = Decider("mlx-community/Qwen2.5-1.5B-Instruct-4bit")  # faster, less accurate
+decider = Decider()                      # Laya when installed, else the platform default
+decider = Decider("mlx-community/Qwen2.5-1.5B-Instruct-4bit")  # explicit causal model
 decider = Decider(calibration="calibration.json")              # calibrated confidences
 
 result = decider.decide(context, schema)
@@ -208,11 +273,13 @@ finally:
     prefix.release()
 ```
 
-Calls are sequential and each context gets its own prefill of *its own text*.
-`shared_prefix=True` skips re-prefilling the schema block, which is most of the
-prefill when the contexts are shorter than the schema. True batching into a single
-forward pass is not implemented: it needs per-row sequence lengths in the KV cache,
-and `mlx-lm`'s forward path takes no attention mask, so a padded batch would attend
+On the Laya backend `decide_many` is one batched model call and `shared_prefix`
+is ignored (Laya keeps no KV cache). On the causal backends, calls are sequential
+and each context gets its own prefill of *its own text*. `shared_prefix=True`
+skips re-prefilling the schema block, which is most of the prefill when the
+contexts are shorter than the schema. True batching into a single forward pass is
+not implemented there: it needs per-row sequence lengths in the KV cache, and
+`mlx-lm`'s forward path takes no attention mask, so a padded batch would attend
 over its own padding.
 
 ### Save and load schemas
@@ -229,20 +296,29 @@ Optional `pd.toml` in the working directory or `~/.config/parallel-decisions/`, 
 file > default. `pd config` prints what is in effect.
 
 ```toml
-model = "mlx-community/Qwen2.5-7B-Instruct-4bit"
+model = "convaiinnovations/laya"   # or a causal model id, e.g. mlx-community/Qwen2.5-7B-Instruct-4bit
 calibration = "~/.config/parallel-decisions/calibration.json"
 max_fields_per_batch = 6      # lower = less memory, more passes
 memory_budget_gb = 6.0        # KV broadcast budget; also clamped to 65% of RAM
 max_collision_rows = 8        # rows per pass when scoring colliding choices exactly
-warmup = true                 # compile Metal shaders once at load
+warmup = true                 # compile Metal shaders / preload Laya checkpoints once at load
 lock_timeout_s = 0            # 0 = fail fast if another thread is mid-call
 log = "json"                  # one JSON line per call on stderr
-backend = "auto"              # "auto" | "mlx" | "torch" — see "NVIDIA GPU / CPU (torch backend)"
+backend = "auto"              # "auto" | "laya" | "mlx" | "torch" — see the backend sections
+laya_device = "cuda"          # laya backend only: "cuda" | "cpu" (default: auto-detect)
 torch_dtype = "bfloat16"      # torch backend only: bfloat16 | float16 | float32
 torch_device = "cuda"         # torch backend only: "cuda" | "cpu" (default: auto-detect)
 cuda_graph = false            # torch backend only: replay repeated suffix passes as one CUDA graph
 torch_prefill_chunk = 2048    # torch backend only: prompt segment size; 0 disables chunking
 ```
+
+### Laya backend
+
+Covered in [The default model: Laya](#the-default-model-laya): install the `laya`
+extra, `auto` selects it, `model` pins a checkpoint, `laya_device` picks the
+device, and `warmup` preloads. Force a causal backend with `backend = "torch"` or
+`backend = "mlx"` when you want the token-level machinery (collision scoring,
+shared prefixes, CUDA graphs).
 
 ### NVIDIA GPU / CPU (torch backend)
 
@@ -251,7 +327,10 @@ card supported by PyTorch) or plain CPU, via a PyTorch port of the same decoding
 scheme (`engine_torch.py`, contributed upstream by the `harshatheg/Qwen-2.5-1B-RLCD`
 project and integrated here on top of the package's schema, collision and
 calibration machinery). With `backend = "auto"` (the default) an Apple Silicon
-Mac uses MLX; everything else uses torch with CUDA when available.
+Mac uses MLX and everything else uses torch with CUDA when available — unless the
+`laya` package is installed, in which case `auto` prefers Laya (see
+[The default model: Laya](#the-default-model-laya)); force this engine with
+`backend = "torch"`.
 
 Use the explicit Windows dependency installation in [GPU_SETUP.md](GPU_SETUP.md).
 Install the **`torch` extra** for this backend (`pip install ".[torch]"` from a
@@ -409,12 +488,15 @@ Swap the model per use case (MLX backend):
 | `mlx-community/Qwen3.5-4B-OptiQ-4bit` | runs (hybrid linear attention, ~3 GB, constant 49 MB per row); accuracy not yet measured against the eval |
 
 The model must be a causal LM that `mlx-lm` can load. Any quantisation works; a 4-bit
-7B is the measured sweet spot for a 16 GB machine.
+7B is the measured sweet spot for a 16 GB machine. For the Laya backend, pass a
+Laya checkpoint name or repo id instead (see
+[The default model: Laya](#the-default-model-laya)).
 
 ## CLI
 
 ```bash
-# validate a schema (types, choice counts, token collisions with rename advice)
+# validate a schema (types, choice counts; the token-collision lint with rename
+# advice applies to the causal backends — the Laya backend says so and skips it)
 .venv/bin/pd validate examples/fraud.json --check-tokens
 
 # run one decision
@@ -464,28 +546,34 @@ Two costs dominate:
 
 ## Accuracy notes
 
-- **Probabilities are softmax over allowed answers**, not calibrated frequencies.
-  Treat them as relative confidence until you fit a calibrator on your own labelled
-  data. Measured on the MLX 7B default model: raw confidence ranks correctness well
-  but is overconfident in level (AUROC 0.747; ECE 0.205, 14 answers at confidence
-  1.0000 of which 2 were wrong), and post-hoc calibration took ECE to 0.150 out of
-  sample on 188 labelled decisions. Acting on the most confident 25% carried a 6.4%
-  error rate; the most confident 50%, 12.8%. See
-  [`CALIBRATION.md`](CALIBRATION.md) — including why a "1% error rate" threshold
-  was **not** reachable on that data.
-- **The model has a listing-order preference.** It picks the first listed option in
-  82% of choice fields, and is right 96.7% of the time when the correct option is
-  first versus 24.5% when it is not. For choice fields, order your options by what
-  you believe is most likely — or treat low-confidence answers as "position, not
-  evidence".
-- **Choice collisions.** If two choices start with the same token, a single logit
-  cannot separate them. The library detects this exactly (the candidate token is the
-  one the model actually emits after the field's prefix) and scores the sequences
-  down a token trie — only nodes that have children get a row, so 240 numbered
-  choices cost ~25 rows in 4 batched passes instead of one row per choice. `pd
-  validate --check-tokens` reports collisions with concrete rename suggestions.
-- **One answer per field** unless the field is `multi`, which is one yes/no decision
-  per choice. No free-form text or numeric output.
+- **Laya confidence is calibrated on Laya's benchmark, not your domain.** It is
+  the probability mass on the reported answer after the model's own temperature
+  scaling, and it gates well on the data Laya evaluates; treat it as a strong
+  prior and fit a calibrator on your own labelled rows before acting on a
+  threshold. `raw_probability` equals it until you attach a calibrator.
+- **On the causal backends, probabilities are softmax over allowed answers**, not
+  calibrated frequencies. Treat them as relative confidence until you fit a
+  calibrator on your own labelled data. Measured on the MLX 7B default model: raw
+  confidence ranks correctness well but is overconfident in level (AUROC 0.747;
+  ECE 0.205, 14 answers at confidence 1.0000 of which 2 were wrong), and post-hoc
+  calibration took ECE to 0.150 out of sample on 188 labelled decisions. Acting
+  on the most confident 25% carried a 6.4% error rate; the most confident 50%,
+  12.8%. See [`CALIBRATION.md`](CALIBRATION.md) — including why a "1% error rate"
+  threshold was **not** reachable on that data.
+- **The causal model has a listing-order preference.** It picks the first listed
+  option in 82% of choice fields, and is right 96.7% of the time when the correct
+  option is first versus 24.5% when it is not. For choice fields, order your
+  options by what you believe is most likely — or treat low-confidence answers as
+  "position, not evidence".
+- **Choice collisions** (causal backends). If two choices start with the same
+  token, a single logit cannot separate them. The library detects this exactly
+  (the candidate token is the one the model actually emits after the field's
+  prefix) and scores the sequences down a token trie — only nodes that have
+  children get a row, so 240 numbered choices cost ~25 rows in 4 batched passes
+  instead of one row per choice. `pd validate --check-tokens` reports collisions
+  with concrete rename suggestions.
+- **One answer per field** unless the field is `multi`, which is one yes/no
+  decision per choice. No free-form text or numeric output.
 
 ## Project layout
 
@@ -494,6 +582,7 @@ parallel-decisions/
 ├── src/parallel_decisions/
 │   ├── schema.py       # Schema/Field, validation, token compilation, collisions
 │   ├── engine.py       # Decider: prefill, broadcast, batched passes, calibration
+│   ├── engine_laya.py  # Laya backend: schema -> questions, Router, answer mapping
 │   ├── calibration.py  # Calibrator (temperature/Platt/isotonic), metrics, CV fitting
 │   ├── config.py       # pd.toml + PD_* environment variables
 │   ├── lint.py         # collision lint with rename advice

@@ -39,9 +39,33 @@ Integration-ready packaging for the torch backend.
 
 ### Added
 
+- **Laya backend, and it is the default model path when installed.** `backend =
+  "laya"` drives the non-autoregressive `convaiinnovations/laya` decision model
+  the same way `SnipLedger.AI` does (`snipleger_ai/backends/laya.py`): each schema
+  field becomes a typed Laya question (`enum` -> `choice`, `boolean` -> `noul`,
+  `multi` -> one question per choice at `"<name>[<i>]"`), one
+  `Router.predict`/`predict_batch` call answers them all, and probabilities are
+  Laya's calibrated `answer_confidence` (`raw_probability` equals it until you
+  fit your own calibrator on top). Install with `pip install
+  "parallel-decisions[laya]"`; model assets come from the Hugging Face cache.
+  `Decider()` then resolves `auto` to Laya; `english`, `multilingual`,
+  `typed-decisions` or a standalone `convaiinnovations/laya-*` repo pin a
+  checkpoint; `laya_device` / `PD_LAYA_DEVICE` select CUDA or CPU;
+  `decide_many` is one batched call. The MLX and Torch causal engines remain
+  selectable (`backend="mlx"` / `"torch"`), and schema/calibration code is
+  unchanged.
 - `INTEGRATION.md`: an application-integration guide (Python lifespan, schema
   and prefix use, the local HTTP contract, CLI, failure handling, and confidence
   caveats).
+
+### Changed
+
+- **`backend = "auto"` prefers Laya when the `laya` package is importable**;
+  the previous platform default (MLX on Apple Silicon, Torch elsewhere) applies
+  when it is not. `pd validate --check-tokens` prints why the causal-token lint
+  is skipped on the Laya backend, and `pd decide` names Laya's confidence for
+  what it is (calibrated on Laya's benchmark, not on your domain). Per the
+  repository convention, the version is bumped in a separate release commit.
 
 ## 0.3.0 — 2026-09-16
 

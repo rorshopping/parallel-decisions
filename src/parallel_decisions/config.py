@@ -16,7 +16,8 @@ Precedence (highest first):
     warmup = true
     log = "json"            # or "off"
     lock_timeout_s = 0      # 0 = fail fast if another thread is mid-call
-    backend = "auto"        # "auto" | "mlx" | "torch"
+    backend = "auto"        # "auto" | "laya" | "mlx" | "torch"
+    laya_device = "cuda"      # laya backend: "cuda" | "cpu" (default: auto)
     torch_dtype = "bfloat16"  # torch backend: bfloat16 | float16 | float32
     torch_device = "cuda"     # torch backend: "cuda" | "cpu" (default: auto)
     torch_prefill_chunk = 2048  # torch: prompt segment size; 0 disables chunking
@@ -45,6 +46,7 @@ ENV_NAMES = {
     "log": "PD_LOG",
     "lock_timeout_s": "PD_LOCK_TIMEOUT_S",
     "backend": "PD_BACKEND",
+    "laya_device": "PD_LAYA_DEVICE",
     "torch_dtype": "PD_TORCH_DTYPE",
     "torch_device": "PD_TORCH_DEVICE",
     "torch_prefill_chunk": "PD_TORCH_PREFILL_CHUNK",
@@ -71,6 +73,7 @@ class Config:
     log: str | None = None
     lock_timeout_s: float | None = None
     backend: str | None = None
+    laya_device: str | None = None
     torch_dtype: str | None = None
     torch_device: str | None = None
     torch_prefill_chunk: int | None = None
@@ -147,7 +150,7 @@ def _coerce(key: str, value: Any) -> Any:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in BOOL_TRUE
-    if key in ("model", "calibration", "log"):
+    if key in ("model", "calibration", "log", "laya_device"):
         return str(value)
     return value
 

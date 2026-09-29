@@ -41,10 +41,12 @@ from .engine import (
     FieldValue,
     UnsupportedPlatformError,
 )
+from .engine_laya import DEFAULT_LAYA_MODEL, LayaDecisionError, LayaUnavailableError
 from .schema import MAX_CHOICES, Field, Schema, SchemaError
 
 __all__ = [
     "DEFAULT_MODEL",
+    "DEFAULT_LAYA_MODEL",
     "Decider",
     "DecisionResult",
     "FieldValue",
@@ -72,6 +74,8 @@ __all__ = [
     "load_config",
     "ConcurrencyError",
     "UnsupportedPlatformError",
+    "LayaUnavailableError",
+    "LayaDecisionError",
 ]
 
 __version__ = "0.3.1"
