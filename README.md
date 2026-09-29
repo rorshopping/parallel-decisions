@@ -123,7 +123,8 @@ Laya-specific notes:
 
 On all public example cases of TypeSafe's four eval workflows (20 cases, 373
 reference question-pairs), scored against their own reference — the consensus of
-GPT-6 Astra and Fable 5.1 — the **MLX default model (Qwen2.5-7B-Instruct-4bit)**
+GPT-6 Astra and Fable 5.1 — **the MLX backend's default model
+(Qwen2.5-7B-Instruct-4bit)**
 reached **73.8%** (253/343 on the strict like-for-like subset), versus Jev at
 86.6% and frontier models at 89–90%. These numbers describe that specific
 evaluation. **They do not describe the torch backend's default
@@ -524,7 +525,11 @@ curl -s localhost:8000/health   # busy flag + served/queued/rejected counters
 
 Standard library only.
 
-## Performance on an M5 MacBook Air (16 GB)
+## Performance on an M5 MacBook Air (16 GB, MLX causal engine)
+
+The numbers below describe the MLX 7B path; the Laya checkpoints trade the long
+context window for one-pass decisions (a few hundred milliseconds per small
+schema on CPU, seconds for wide ones).
 
 | Context size | Fields | Latency |
 |---|---|---|
@@ -603,4 +608,6 @@ parallel-decisions/
 
 MIT (this package). The parallel-constrained decoding technique originates from
 the community artifact `harshatheg/Qwen-2.5-1B-RLCD` (Apache-2.0); models are
-Apache-2.0 by their respective publishers.
+Apache-2.0 by their respective publishers. The default model path uses the
+Apache-2.0 `laya` package and the `convaiinnovations/laya` checkpoints (Convai
+Innovations), fetched from Hugging Face by that package.

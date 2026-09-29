@@ -65,11 +65,12 @@ def decide_tool(context: str, schema: dict) -> str:
                  Descriptions and per-choice definitions measurably improve accuracy.
 
     Returns:
-        JSON: per-field value, calibrated probability, and alternatives.
+        JSON: per-field value, calibrated probability, and alternatives, or
+        {"error": ...} for a bad schema or an inference failure.
     """
     try:
         result = _decider().decide(context, _as_schema(schema))
-    except (SchemaError, ValueError) as exc:
+    except (SchemaError, ValueError, RuntimeError) as exc:
         return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
     return json.dumps({
         "decisions": result.full_json(),

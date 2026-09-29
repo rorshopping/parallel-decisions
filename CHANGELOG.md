@@ -47,7 +47,8 @@ Integration-ready packaging for the torch backend.
   `Router.predict`/`predict_batch` call answers them all, and probabilities are
   Laya's calibrated `answer_confidence` (`raw_probability` equals it until you
   fit your own calibrator on top). Install with `pip install
-  "parallel-decisions[laya]"`; model assets come from the Hugging Face cache.
+  "parallel-decisions[laya]"`; the `laya` package fetches the checkpoints from
+  Hugging Face on first use and runs offline from its cache afterwards.
   `Decider()` then resolves `auto` to Laya; `english`, `multilingual`,
   `typed-decisions` or a standalone `convaiinnovations/laya-*` repo pin a
   checkpoint; `laya_device` / `PD_LAYA_DEVICE` select CUDA or CPU;

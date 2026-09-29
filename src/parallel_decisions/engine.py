@@ -1011,7 +1011,7 @@ class Decider:
             schema = Schema(schema)
         contexts = list(contexts)
         if self.backend == "laya":
-            return self._decide_many_laya(contexts, schema)
+            return self._decide_many_laya(contexts, schema, temperature=temperature)
         if not shared_prefix:
             return [self.decide(ctx, schema, temperature=temperature) for ctx in contexts]
         prefix = self.prepare(schema)
@@ -1021,17 +1021,22 @@ class Decider:
         finally:
             prefix.release()
 
-    def _decide_many_laya(self, contexts: Sequence[str],
-                          schema: Schema) -> list[DecisionResult]:
+    def _decide_many_laya(self, contexts: Sequence[str], schema: Schema,
+                          temperature: float = 1.0) -> list[DecisionResult]:
         if not contexts:
             return []
         for context in contexts:
             if not isinstance(context, str) or not context.strip():
                 raise ValueError("context must be a non-empty string")
+        if temperature != 1.0:
+            self._log(f"temperature={temperature} is ignored by the laya backend "
+                      f"(the model ships its own calibrated temperature scaling)")
         self.load()
         with self._acquire_lock("decide_many"):
             t_start = time.perf_counter()
             self._active_fields = schema.fields
+            # `max_fields_per_batch` doubles as the states-per-forward-pass cap:
+            # it is the existing memory knob, and 32 states is a safe Laya batch.
             outs = self._laya_rt.decide_many(contexts, schema,
                                              batch_size=self.max_fields_per_batch)
             results: list[DecisionResult] = []
@@ -1281,7 +1286,11 @@ class PromptPrefix:
         return len(self.prefix_tokens)
 
     def release(self) -> None:
-        if getattr(self.decider, "backend", "mlx") == "torch":
+        backend = getattr(self.decider, "backend", "mlx")
+        if backend == "laya":
+            self.cache = None          # nothing was allocated: no lock, no MLX touch
+            return
+        if backend == "torch":
             with self.decider._acquire_lock("release prefix"):
                 self.cache = None
             return

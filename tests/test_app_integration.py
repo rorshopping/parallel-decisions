@@ -354,3 +354,17 @@ def test_mcp_dict_schema_and_json(decider, monkeypatch):
         assert payload["decisions"] == result().full_json()
         assert payload["calibrated"] is False
     assert "error" in json.loads(mcp.decide_tool("", FIELDS))
+
+
+def test_mcp_decision_failure_is_json(decider, monkeypatch):
+    """A runtime decision failure (e.g. a Laya field with no answer) must not crash."""
+    from parallel_decisions import LayaDecisionError
+
+    mcp = load_example("mcp_server")
+    monkeypatch.setattr(mcp, "DECIDER", decider)
+    monkeypatch.setattr(decider, "decide",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(
+                            LayaDecisionError("no answer for 'needs_human'")))
+    payload = json.loads(mcp.decide_tool("x", FIELDS))
+    assert payload["error"].startswith("LayaDecisionError:")
+    assert "no answer" in payload["error"]

@@ -43,9 +43,10 @@ reinstall the shared venv against a different worktree while another agent uses 
 PowerShell commands may print harmless stderr warnings as error records; inspect
 `$LASTEXITCODE` immediately after Python. Do not truncate failing tracebacks or use
 `cmd /c "... & echo %ERRORLEVEL%"` (expansion can report a stale exit status).
-The latest documented suite is 301 passed / 3 skipped on this CUDA machine; counts
-vary with optional dependencies and hardware. A pass using another checkout is
-not verification of your changes.
+The latest documented suite is 273 passed / 3 skipped on this CUDA machine (the
+committed tree; an untracked calibration test file in the working tree adds ~28);
+counts vary with optional dependencies and hardware. A pass using another checkout
+is not verification of your changes.
 
 The shared venv does **not** have `laya` installed; the Snipledger2 venv does
 (`C:\Users\Richard\Documents\Projects\Snipledger2\src\SnipLedger.AI\.venv`), and
@@ -247,5 +248,8 @@ The phased plan for this package lives in the research tree at
 ## Provenance
 
 - Method origin: `harshatheg/Qwen-2.5-1B-RLCD` (Apache-2.0) community artifact.
+- Default model path: `convaiinnovations/laya` (Apache-2.0 package and
+  checkpoints, Convai Innovations); integration mirrors `SnipLedger.AI`'s
+  `snipleger_ai/backends/laya.py`.
 - Evaluation and model choice: `rlcd-research` (`evals/`), 2026-09.
 - Concept (Jev / TypeSafe AI): unrelated to this package; no affiliation.

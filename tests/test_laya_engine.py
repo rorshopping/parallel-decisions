@@ -143,6 +143,15 @@ def test_plan_schema_falls_back_to_question_shaped_instructions():
     }
 
 
+def test_plan_schema_rejects_colliding_question_ids():
+    schema = Schema({
+        "actions": {"type": "multi", "choices": ["retry", "escalate"]},
+        "actions[0]": {"type": "boolean"},
+    })
+    with pytest.raises(ValueError, match="both map to Laya question"):
+        plan_schema(schema)
+
+
 # ------------------------------------------------------------- answer mapping
 def test_choice_answer_maps_value_probability_and_distribution():
     plan = plan_schema(Schema({
@@ -265,7 +274,9 @@ def test_auto_falls_back_to_the_causal_backends_without_laya(monkeypatch):
     ("english", "english"),
     ("EN", "english"),
     ("multi", "multilingual"),
+    ("laya-multilingual", "multilingual"),
     ("typed_decisions", "typed-decisions"),
+    ("laya-typed-decisions", "typed-decisions"),
     ("convaiinnovations/laya-multilingual", "multilingual"),
     ("convaiinnovations/laya-typed-decisions", "typed-decisions"),
 ])
@@ -362,6 +373,15 @@ def test_decider_laya_shared_prefix_is_a_noop(fake_router):
     result = decider.decide_with_prefix(prefix, "one")
     assert result["urgent"].value is True
     prefix.release()
+
+
+def test_laya_prefix_release_does_not_touch_mlx(fake_router, monkeypatch):
+    touched = []
+    monkeypatch.setattr(engine, "_clear_mlx_cache", lambda: touched.append(True))
+    decider = Decider(backend="laya", config=Config(), warmup=False)
+    prefix = decider.prepare(Schema({"urgent": {"type": "boolean"}}))
+    prefix.release()
+    assert touched == []
 
 
 def test_decider_laya_applies_a_calibrator_on_top(fake_router):

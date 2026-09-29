@@ -207,16 +207,29 @@ def plan_schema(schema: Schema) -> LayaPlan:
     multi -> one noul per choice (keyed `"<name>[<i>]"`)."""
     fields: list[PlannedField] = []
     questions: dict[str, dict] = {}
+    owner: dict[str, str] = {}
+
+    def _claim(qid: str, name: str) -> None:
+        previous = owner.get(qid)
+        if previous is not None:
+            raise ValueError(
+                f"field {name!r} and field {previous!r} both map to Laya question "
+                f"{qid!r}; rename one of them")
+        owner[qid] = name
+
     for f in schema.fields.values():
         if f.is_multi:
             for i, choice in enumerate(f.choices):
                 qid = f"{f.name}[{i}]"
+                _claim(qid, f.name)
                 fields.append(PlannedField(f.name, qid, "noul", f, i))
                 questions[qid] = _multi_question(f, choice)
         elif f.is_boolean:
+            _claim(f.name, f.name)
             fields.append(PlannedField(f.name, f.name, "noul", f))
             questions[f.name] = _boolean_question(f)
         else:
+            _claim(f.name, f.name)
             fields.append(PlannedField(f.name, f.name, "choice", f))
             questions[f.name] = _choice_question(f)
     return LayaPlan(tuple(fields), questions, {f.name: f for f in schema.fields.values()})
@@ -365,6 +378,10 @@ class LayaRuntime:
             raise LayaUnavailableError(
                 "the installed laya package has no Router; upgrade it with "
                 "pip install -U \"laya>=0.3.21\"") from exc
+        except TypeError as exc:
+            raise LayaUnavailableError(
+                "this laya version does not accept Router(device=..., preload=...); "
+                "upgrade it with pip install -U \"laya>=0.3.21\"") from exc
 
     def _preload_models(self) -> list[str]:
         if self.pinned:
