@@ -205,7 +205,10 @@ def test_capacity_does_not_silently_truncate():
 
 @pytest.mark.parametrize("options", [dict(cuda_graph=True), dict(torch_device="cpu"),
     dict(torch_dtype="float32"), dict(memory_budget_gb=1), dict(n_ctx=0),
-    dict(n_batch=-1), dict(n_threads=True), dict(max_fields_per_batch=0)])
+    dict(n_batch=-1), dict(n_threads=True), dict(max_fields_per_batch=0),
+    # torch_prefill_chunk is a torch-only setting added after this backend; the
+    # facade must not silently accept a knob llamacpp never reads.
+    dict(torch_prefill_chunk=2048)])
 def test_unsupported_config_fails_closed(options):
     with pytest.raises(ValueError):
         Decider("local.gguf", backend="llamacpp", config=Config(), **options)
