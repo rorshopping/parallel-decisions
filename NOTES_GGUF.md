@@ -1,7 +1,12 @@
 # GGUF backend (`backend="llamacpp"`)
 
-Status: implemented, unit-tested and native-smoke-tested on this machine.
-Branch `feat/gguf-engine`, version 0.4.0.
+Status: implemented and native-tested; original functional harness passes with
+CPU repacking disabled, but the expanded full-sequence oracle still fails on
+ordinary multi marginals. **Not overall green.** See NOTES_GGUF_NATIVE_RUN.md
+for the native run record and NOTES_GGUF_DIVERGENCE.md for the 2026-09-18
+controls and the remaining limits. Landed on `main` via `integration/windows-gguf`
+(6360347) and `feat/gguf-engine` (6695c13); the package version is unchanged at
+0.3.1, which is still unreleased.
 
 ## Public contract
 

@@ -27,9 +27,13 @@ def test_loader_disables_extra_buffer_types_before_model_creation(tmp_path, monk
         llama_backend_init=lambda: None,
         llama_max_parallel_sequences=lambda: 64,
     )
+    # `llama_synchronize` is part of the required native set (the prefill path
+    # must finish before the prefill clock stops) and is provided by the real
+    # 0.3.35 binding, so the stand-in has to list it too.
     for name in ("llama_get_memory", "llama_memory_seq_cp", "llama_memory_seq_rm",
                  "llama_memory_clear", "llama_batch_init", "llama_batch_free",
-                 "llama_decode", "llama_get_logits_ith", "llama_n_ctx_seq"):
+                 "llama_decode", "llama_get_logits_ith", "llama_n_ctx_seq",
+                 "llama_synchronize"):
         setattr(native, name, lambda *args: None)
     fake = SimpleNamespace(__version__="0.3.35", llama_cpp=native,
                            _internals=SimpleNamespace(LlamaModel=model))
