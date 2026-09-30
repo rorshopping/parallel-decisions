@@ -185,6 +185,29 @@ def test_laya_device_precedence(tmp_path, monkeypatch):
     assert Decider(config=str(path), laya_device="cpu").laya_device == "cpu"
 
 
+def test_numeric_settings_are_coerced_to_int_from_toml_and_env(tmp_path, monkeypatch):
+    """Integer settings must arrive as ints from both file and environment.
+
+    The llamacpp settings and torch_prefill_chunk all end up in arithmetic, so
+    a pd.toml/env string must not leak through as `str`.
+    """
+    for name, env in (("n_ctx", "PD_N_CTX"), ("n_batch", "PD_N_BATCH"),
+                      ("n_threads", "PD_N_THREADS"),
+                      ("torch_prefill_chunk", "PD_TORCH_PREFILL_CHUNK")):
+        monkeypatch.delenv(env, raising=False)
+    path = tmp_path / "pd.toml"
+    path.write_text(
+        'n_ctx = "4096"\nn_batch = "512"\nn_threads = "8"\n'
+        'torch_prefill_chunk = "1024"\n', encoding="utf-8")
+    cfg = load_config(str(path))
+    assert (cfg.n_ctx, cfg.n_batch, cfg.n_threads) == (4096, 512, 8)
+    assert cfg.torch_prefill_chunk == 1024
+    assert isinstance(cfg.torch_prefill_chunk, int)
+
+    monkeypatch.setenv("PD_TORCH_PREFILL_CHUNK", "512")
+    assert load_config(str(path)).torch_prefill_chunk == 512
+
+
 def test_backend_argument_overrides_config(monkeypatch):
     from parallel_decisions.engine import Decider
 

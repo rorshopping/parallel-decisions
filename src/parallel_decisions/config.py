@@ -154,7 +154,8 @@ def _from_mapping(data: dict[str, Any], source: str | None = None) -> Config:
 
 
 def _coerce(key: str, value: Any) -> Any:
-    if key in ("max_fields_per_batch", "max_collision_rows", "n_ctx", "n_batch", "n_threads"):
+    if key in ("max_fields_per_batch", "max_collision_rows", "n_ctx", "n_batch",
+               "n_threads", "torch_prefill_chunk"):
         return int(value)
     if key in ("memory_budget_gb", "lock_timeout_s"):
         return float(value)
