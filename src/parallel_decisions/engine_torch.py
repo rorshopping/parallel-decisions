@@ -25,6 +25,56 @@ from .prompts import build_prompt, build_prompt_parts
 from .schema import CompiledField
 
 DEFAULT_TORCH_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
+TORCH_QUANT_TYPES = ("nf4", "fp4")
+
+
+def normalize_torch_quant(value: str | None) -> str | None:
+    """Validate a `torch_quant` setting: 'nf4', 'fp4', or None for full precision.
+
+    Unknown values fail closed here rather than reaching bitsandbytes, which
+    validates the same two strings much later inside `from_pretrained`.
+    """
+    if value is None:
+        return None
+    quant = str(value).strip().lower()
+    if quant not in TORCH_QUANT_TYPES:
+        raise ValueError(
+            f"torch_quant must be one of {', '.join(TORCH_QUANT_TYPES)} "
+            f"(or unset), got {value!r}")
+    return quant
+
+
+def _require_accelerate(quant: str) -> None:
+    """`device_map` is dispatched by accelerate; fail with a clear message."""
+    try:
+        import accelerate  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            f"torch_quant={quant!r} needs device_map, which requires the optional "
+            f"'accelerate' package, which is not installed. "
+            f"Install it with: pip install accelerate") from exc
+
+
+def _quantization_config(quant: str, dtype):
+    """The bitsandbytes 4-bit config, importing all heavy deps lazily.
+
+    bitsandbytes is checked up front so a missing package is one clear ImportError
+    at load time, not a deep failure inside `from_pretrained`.
+    """
+    try:
+        import bitsandbytes  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            f"torch_quant={quant!r} requires the optional 'bitsandbytes' package, "
+            f"which is not installed. Install it with: pip install bitsandbytes") from exc
+    from transformers import BitsAndBytesConfig
+
+    return BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type=quant,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_compute_dtype=dtype,
+    )
 
 # Long prompts are read in segments through one growing KV cache. On GPUs without
 # an efficient SDPA kernel (Turing and older) the attention math backend
@@ -208,11 +258,13 @@ class TorchRuntime:
     """
 
     def __init__(self, model_id: str | None = None, *, dtype: str | None = None,
-                 device: str | None = None, verbose: bool = False,
-                 cuda_graph: bool = False, prefill_chunk: int | None = None):
+                 device: str | None = None, quant: str | None = None,
+                 verbose: bool = False, cuda_graph: bool = False,
+                 prefill_chunk: int | None = None):
         self.model_id = model_id or DEFAULT_TORCH_MODEL
         self._dtype_pref = dtype
         self._device_pref = device
+        self.quant = normalize_torch_quant(quant)
         self.verbose = verbose
         self.torch = None
         self.model = None
@@ -245,15 +297,33 @@ class TorchRuntime:
         else:
             self.dtype = torch.float32
 
+        quant = self.quant
+        quantization_config = None
+        if quant is not None:
+            if not str(self.device).startswith("cuda"):
+                raise RuntimeError(
+                    f"torch_quant={quant!r} requires a CUDA device; got "
+                    f"{self.device!r}. bitsandbytes 4-bit does not run on CPU; "
+                    f"unset torch_quant for the CPU backend.")
+            quantization_config = _quantization_config(quant, self.dtype)
+            _require_accelerate(quant)
+
         t0 = time.perf_counter()
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_id)
         load_kwargs: dict[str, Any] = {"low_cpu_mem_usage": True}
         if self.dtype is not None:
             load_kwargs["dtype"] = self.dtype  # transformers>=5; torch_dtype deprecated
+        if quantization_config is not None:
+            load_kwargs["quantization_config"] = quantization_config
+            # 4-bit modules are placed by accelerate's device_map; a later .to()
+            # would move the packed weights instead of the compute device.
+            load_kwargs["device_map"] = {"": self.device}
         self.model = AutoModelForCausalLM.from_pretrained(self.model_id, **load_kwargs)
-        self.model.to(self.device)
+        if quantization_config is None:
+            self.model.to(self.device)
         self.model.eval()
-        self._log(f"loaded {self.model_id} on {self.device} ({self.dtype}) "
+        label = f"{self.dtype}" + (f", {quant}" if quant is not None else "")
+        self._log(f"loaded {self.model_id} on {self.device} ({label}) "
                   f"in {time.perf_counter() - t0:.1f}s")
         return self
 

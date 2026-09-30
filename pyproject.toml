@@ -29,6 +29,8 @@ laya = ["laya>=0.3.21,<0.4"]
 # Install .[torch] for CUDA/CPU inference; select the CUDA wheel separately if needed.
 # The runtime uses Transformers 5's cache API. Bounds are not a tested-version matrix.
 torch = ["torch>=2.6", "transformers>=5.17,<6", "accelerate>=1.1"]
+# Native sequence/KV ABI tested with the official Windows CPU wheel.
+llamacpp = ["llama-cpp-python==0.3.35"]
 dev = ["pytest>=8", "packaging>=23"]
 mcp = ["mcp>=1.0"]
 

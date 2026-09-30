@@ -59,6 +59,23 @@ Integration-ready packaging for the torch backend.
   and prefix use, the local HTTP contract, CLI, failure handling, and confidence
   caveats).
 
+- Opt-in 4-bit torch loading: `torch_quant = "nf4" | "fp4"` (bitsandbytes),
+  explicit kwarg > `PD_TORCH_QUANT` > `pd.toml` > full precision. CUDA only;
+  unknown values, non-CUDA devices and missing bitsandbytes/accelerate fail
+  closed. With `torch_quant` unset the loader is unchanged.
+- 4-bit modules are placed via `device_map` and the loader skips `.to()` for
+  them. Contract, limits and the verified/unverified list are in
+  `NOTES_TORCH_4BIT.md`; raw scores remain uncalibrated ranking signals.
+- Opt-in `backend="llamacpp"` for local Qwen2 GGUF CPU inference using native
+  multiple sequence IDs, one context prefill, KV branches, ragged batched suffix
+  decoding and exact collision scoring. Optional dependency pins the verified
+  llama-cpp-python 0.3.35 ABI. No completion API, model downloads or prompt changes.
+- Added `n_ctx`, `n_batch`, `n_threads` configuration, request cleanup and
+  native-shaped fake regressions. Real Windows 7.6B Q4_K_M smoke is documented in
+  `NOTES_GGUF.md`; raw confidence is not measured decision accuracy.
+- Shared-schema prefix reuse, CUDA offload and CUDA Graphs are not supported by
+  this backend; unsupported settings fail closed. MLX/Torch defaults are unchanged.
+
 ### Changed
 
 - **`backend = "auto"` prefers Laya when the `laya` package is importable**;

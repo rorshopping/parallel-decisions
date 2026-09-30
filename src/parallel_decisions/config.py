@@ -16,11 +16,15 @@ Precedence (highest first):
     warmup = true
     log = "json"            # or "off"
     lock_timeout_s = 0      # 0 = fail fast if another thread is mid-call
-    backend = "auto"        # "auto" | "laya" | "mlx" | "torch"
+    backend = "auto"        # "auto" | "laya" | "mlx" | "torch" | "llamacpp"
     laya_device = "cuda"      # laya backend: "cuda" | "cpu" (default: auto)
     torch_dtype = "bfloat16"  # torch backend: bfloat16 | float16 | float32
     torch_device = "cuda"     # torch backend: "cuda" | "cpu" (default: auto)
     torch_prefill_chunk = 2048  # torch: prompt segment size; 0 disables chunking
+    torch_quant = "nf4"       # torch backend: nf4 | fp4 (bitsandbytes 4-bit, CUDA only)
+    n_ctx = 4096              # llamacpp: total unified KV cells
+    n_batch = 512             # llamacpp: tokens per native decode
+    n_threads = 4             # llamacpp: CPU threads (default min(8, CPU count))
 """
 
 from __future__ import annotations
@@ -50,7 +54,11 @@ ENV_NAMES = {
     "torch_dtype": "PD_TORCH_DTYPE",
     "torch_device": "PD_TORCH_DEVICE",
     "torch_prefill_chunk": "PD_TORCH_PREFILL_CHUNK",
+    "torch_quant": "PD_TORCH_QUANT",
     "cuda_graph": "PD_CUDA_GRAPH",
+    "n_ctx": "PD_N_CTX",
+    "n_batch": "PD_N_BATCH",
+    "n_threads": "PD_N_THREADS",
 }
 ENV_CONFIG = "PD_CONFIG"
 BOOL_TRUE = {"1", "true", "yes", "on"}
@@ -77,7 +85,11 @@ class Config:
     torch_dtype: str | None = None
     torch_device: str | None = None
     torch_prefill_chunk: int | None = None
+    torch_quant: str | None = None
     cuda_graph: bool | None = None
+    n_ctx: int | None = None
+    n_batch: int | None = None
+    n_threads: int | None = None
     source: str | None = None
 
     def resolved(self) -> dict[str, Any]:
@@ -142,7 +154,7 @@ def _from_mapping(data: dict[str, Any], source: str | None = None) -> Config:
 
 
 def _coerce(key: str, value: Any) -> Any:
-    if key in ("max_fields_per_batch", "max_collision_rows"):
+    if key in ("max_fields_per_batch", "max_collision_rows", "n_ctx", "n_batch", "n_threads"):
         return int(value)
     if key in ("memory_budget_gb", "lock_timeout_s"):
         return float(value)
@@ -150,7 +162,7 @@ def _coerce(key: str, value: Any) -> Any:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in BOOL_TRUE
-    if key in ("model", "calibration", "log", "laya_device"):
+    if key in ("model", "calibration", "log", "laya_device", "torch_quant"):
         return str(value)
     return value
 

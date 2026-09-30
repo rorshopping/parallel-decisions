@@ -305,12 +305,16 @@ max_collision_rows = 8        # rows per pass when scoring colliding choices exa
 warmup = true                 # compile Metal shaders / preload Laya checkpoints once at load
 lock_timeout_s = 0            # 0 = fail fast if another thread is mid-call
 log = "json"                  # one JSON line per call on stderr
-backend = "auto"              # "auto" | "laya" | "mlx" | "torch" — see the backend sections
+backend = "auto"              # "auto" | "laya" | "mlx" | "torch" | "llamacpp" — see the backend sections
 laya_device = "cuda"          # laya backend only: "cuda" | "cpu" (default: auto-detect)
 torch_dtype = "bfloat16"      # torch backend only: bfloat16 | float16 | float32
 torch_device = "cuda"         # torch backend only: "cuda" | "cpu" (default: auto-detect)
+torch_quant = "nf4"           # torch backend only: nf4 | fp4 (bitsandbytes 4-bit; CUDA only)
 cuda_graph = false            # torch backend only: replay repeated suffix passes as one CUDA graph
 torch_prefill_chunk = 2048    # torch backend only: prompt segment size; 0 disables chunking
+n_ctx = 4096                  # llamacpp only: total unified KV cells
+n_batch = 512                 # llamacpp only: tokens per native decode
+n_threads = 4                 # llamacpp only: CPU threads (default min(8, CPU count))
 ```
 
 ### Laya backend
@@ -320,6 +324,33 @@ extra, `auto` selects it, `model` pins a checkpoint, `laya_device` picks the
 device, and `warmup` preloads. Force a causal backend with `backend = "torch"` or
 `backend = "mlx"` when you want the token-level machinery (collision scoring,
 shared prefixes, CUDA graphs).
+
+### Local GGUF / CPU (llamacpp backend)
+
+`backend="llamacpp"` is opt-in and requires an existing local Qwen2 GGUF file,
+plus `pip install ".[llamacpp]"` (pinned native binding 0.3.35). No model is
+downloaded. Pass the first shard for a split GGUF; companion shards must be
+alongside it. See [NOTES_GGUF.md](NOTES_GGUF.md) for the verified native contract,
+commands, evidence and limitations. `auto` never selects this backend — it needs
+an explicit local GGUF path — so `auto` still resolves to Laya, MLX or Torch as
+described above.
+
+```python
+decider = Decider(model_id=r"C:\models\qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+                  backend="llamacpp", n_ctx=4096, n_batch=512, n_threads=4,
+                  max_fields_per_batch=8, max_collision_rows=8, warmup=False)
+```
+
+One logical context prefill feeds native sequence-ID/KV branches with ragged
+batched field suffixes and exact collision sequence scoring. `n_ctx` is total
+unified KV capacity, not a per-field multiplication; requests fail rather than
+truncate when prompt plus live suffix rows exceed it. `n_batch` limits tokens per
+native decode, and must accommodate the maximum field/collision row limit.
+`PD_N_CTX`, `PD_N_BATCH`, `PD_N_THREADS` follow normal configuration precedence.
+CPU only initially; CUDA Graphs, Torch options and explicit `memory_budget_gb`
+are rejected. `prepare`, `decide_with_prefix` and shared-prefix `decide_many` are
+explicitly unsupported. `warmup` adds no extra inference on this CPU backend.
+Raw scores and historical MLX accuracy are not GGUF/Gmail correctness guarantees.
 
 ### NVIDIA GPU / CPU (torch backend)
 
@@ -588,6 +619,7 @@ parallel-decisions/
 │   ├── schema.py       # Schema/Field, validation, token compilation, collisions
 │   ├── engine.py       # Decider: prefill, broadcast, batched passes, calibration
 │   ├── engine_laya.py  # Laya backend: schema -> questions, Router, answer mapping
+│   ├── engine_llamacpp.py # llamacpp backend: native GGUF sequence/KV branches
 │   ├── calibration.py  # Calibrator (temperature/Platt/isotonic), metrics, CV fitting
 │   ├── config.py       # pd.toml + PD_* environment variables
 │   ├── lint.py         # collision lint with rename advice
