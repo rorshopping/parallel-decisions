@@ -5,10 +5,27 @@ All notable changes to `parallel-decisions`. The package follows
 
 ## 0.3.1 — unreleased
 
+> `v0.3.1` is tagged (at `74b2d91`, 2026-09-17) but this heading was never
+> closed out, so everything below it is work landed *after* that tag and is
+> still unreleased. `main` had already been accumulating here (chunked
+> prefill, trie-batched collisions, the Laya backend). The GGUF and 4-bit
+> branches earmarked their own numbers instead — `0.4.0` for the llamacpp
+> backend and `0.5.0` for `torch_quant` — on the assumption that 0.3.1 had
+> shipped. Those earmarks are recorded here so the intent survives branch
+> deletion; splitting them into real sections and bumping `__version__` is
+> release work, deliberately not done in a feature merge.
+
 Integration-ready packaging for the torch backend.
 
 ### Fixed
 
+- **`multi` inclusion follows each row's P(true) marginal**, not the winning
+  side's confidence. A choice the model confidently excluded used to score
+  as a high-confidence inclusion and was folded into the result; it now
+  scores from `distribution["true"]`, so inclusion decisions use the
+  probability the row actually assigns to `true`. Applies on every backend —
+  the Laya path folds `multi` rows through the same helper. Pinned by
+  `tests/test_assemble_multi.py`.
 - **Collision scoring is trie-batched (torch).** A field whose answers share a
   first token previously scored one row per candidate through the prompt cache:
   the 240-choice browser action space needed 248 rows in 33 batched passes
