@@ -230,3 +230,29 @@ All paths are under `C:\Users\Richard\Documents\Projects\`:
 Worktrees share Git history but not working files. When borrowing the GPU
 worktree's venv, pin `PYTHONPATH` to the checkout you mean to test; its editable
 install otherwise imports the older worktree. See `AGENTS.md` for the exact check.
+
+## CUDA offload via llama-cpp-python (2026-10-08, measured)
+
+`Decider(backend="llamacpp", ..., n_gpu_layers=-1)` offloads all layers to
+CUDA. The default stays CPU: this engine's native acceptance harness
+(`scripts/verify_gguf_native.py`) requires cross-row-limit distribution
+agreement at atol=1e-4, which the CPU path with repacking disabled meets
+bit-exactly and CUDA kernels do not — on RTX 2060 SUPER (llama-cpp-python
+0.4.2+cu124, Qwen2.5-7B Q4_K_M) 16 of 21 comparisons fail with deltas up to
+5.9e-2 while every typed decision value stays identical
+(`benchmarks/native-acceptance-gpu.json`). Use the GPU path when decision
+*values* are what you consume; stay on CPU when calibrated *probabilities*
+must be bit-reproducible across row limits.
+
+Wheel: no CUDA wheel exists for the old `==0.3.35` pin (the abetlen release
+index is gone); JamePeng's fork ships current prebuilt CUDA wheels —
+`llama_cpp_python-0.4.2+cu124-cp3XX-win_amd64.whl` from that repo's GitHub
+releases. The wheel's ggml-cuda.dll needs cu12 runtime DLLs (cudart64_12,
+cublas64_12, cublasLt64_12) next to it or on PATH; the dynamic backends must
+be registered before a native load (`_ggml.ggml_backend_load_all_from_path`,
+handled in `engine_llamacpp.load()`).
+
+Measured on this machine (4-field batch incl. one collision field, median of
+3, fixed input, decision values identical): CPU 2381.6 ms → GPU 261.8 ms per
+decision (**9.1x**), peak VRAM 5415 MiB. Gemma-4-E4B (Baecker_ETL) and this
+model cannot share the 8 GB card.

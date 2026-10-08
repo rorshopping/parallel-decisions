@@ -1,8 +1,10 @@
-"""Local GGUF CPU backend using native multi-sequence KV branching.
+"""Local GGUF backend using native multi-sequence KV branching.
 
 No completion/chat API, generated JSON, alternate prompt, model downloader or
 serial field prefill is used. Optional native/numpy imports happen only at load.
-The 0.3.35 binding's low-level API is deliberately version-pinned in the extra.
+The required native multi-sequence API (checked at load) first shipped in the
+0.3.35 binding; the CPU path is the default (distribution-agreement contract),
+n_gpu_layers=-1 opts into full GPU offload.
 """
 from __future__ import annotations
 
@@ -29,13 +31,22 @@ class GGUFTokenizer:
 
 class LlamaCppRuntime:
     def __init__(self, model_id, *, n_ctx=4096, n_batch=512, n_threads=None,
-                 max_rows=32, verbose=False):
+                 max_rows=32, n_gpu_layers=None, verbose=False):
         self.model_id = str(model_id)
         self.n_ctx = _positive_int("n_ctx", n_ctx)
         self.n_batch = _positive_int("n_batch", n_batch)
         self.n_threads = _positive_int("n_threads", n_threads if n_threads is not None
                                        else min(8, os.cpu_count() or 1))
         self.max_rows = _positive_int("max_rows", max_rows)
+        # Default (None) pins the exact historical CPU path: this engine's
+        # native acceptance harness requires cross-row-limit distribution
+        # agreement at atol=1e-4, which CPU with repacking disabled meets
+        # bit-exactly but CUDA kernels do not (measured 2026-10-08: deltas
+        # up to 5.9e-2 with identical decision values — see
+        # benchmarks/native-acceptance-gpu.json). GPU offload is an explicit
+        # opt-in via n_gpu_layers=-1; llama.cpp keeps layers on CPU by itself
+        # when no GPU backend is present.
+        self.n_gpu_layers = int(n_gpu_layers) if n_gpu_layers is not None else 0
         if self.n_batch > self.n_ctx:
             raise ValueError("n_batch must not exceed n_ctx")
         if self.max_rows > self.n_batch:
@@ -44,6 +55,9 @@ class LlamaCppRuntime:
         self.model = self.tokenizer = self.ctx = self.memory = self.batch = None
         self._stack = ExitStack()
         self.stats = {}
+        # Memoized (prompt, suffix) encodes for the boundary-invariance check;
+        # both inputs are invariant per compiled schema across requests.
+        self._boundary_cache = {}
 
     def load(self):
         if self.model is not None:
@@ -57,9 +71,16 @@ class LlamaCppRuntime:
             from llama_cpp import _internals
             import numpy as np
         except ImportError as exc:
-            raise ImportError("llamacpp requires the optional llama-cpp-python==0.3.35 dependency") from exc
-        if llama_cpp.__version__ != "0.3.35":
-            raise RuntimeError("llamacpp currently requires llama-cpp-python==0.3.35 (native ABI)")
+            raise ImportError("llamacpp requires the optional llama-cpp-python>=0.3.35 dependency") from exc
+        # The required native multi-sequence API below is the real ABI
+        # contract; the version floor only documents where it first appeared
+        # (CUDA wheels now ship as 0.4.x without that surface changing).
+        try:
+            version_tuple = tuple(int(p) for p in llama_cpp.__version__.split(".")[:2])
+        except ValueError:
+            version_tuple = (0, 0)
+        if version_tuple < (0, 3):
+            raise RuntimeError("llamacpp requires llama-cpp-python>=0.3.35 (native ABI)")
         required = ("llama_get_memory", "llama_memory_seq_cp", "llama_memory_seq_rm",
                     "llama_memory_clear", "llama_batch_init", "llama_batch_free",
                     "llama_decode", "llama_get_logits_ith", "llama_n_ctx_seq",
@@ -72,10 +93,27 @@ class LlamaCppRuntime:
         # Process-global backend initialization is idempotent. Do not backend_free:
         # another Decider in this process can still own a native context.
         native.llama_backend_init()
+        # GGML_BACKEND_DL builds ship CPU/CUDA backends as dynamic libraries
+        # inside the wheel's lib/ directory; they must be registered before
+        # any native model load ("no backends are loaded" otherwise). The
+        # high-level Llama class scans that directory explicitly, so the raw
+        # path mirrors it. Bindings without the _ggml module load backends
+        # inside llama_backend_init.
+        try:
+            from ctypes import c_char_p
+            from llama_cpp import _ggml
+            from pathlib import Path as _Path
+            lib_dir = _Path(llama_cpp.__file__).parent / "lib"
+            if lib_dir.is_dir():
+                _ggml.ggml_backend_load_all_from_path(c_char_p(str(lib_dir).encode("utf-8")))
+            else:
+                _ggml.ggml_backend_load_all()
+        except ImportError:
+            pass
         stack = ExitStack()
         try:
             mp = native.llama_model_default_params()
-            mp.n_gpu_layers = 0
+            mp.n_gpu_layers = self.n_gpu_layers
             # Repacked CPU kernels failed strict cross-row-limit agreement on
             # 0.3.35 (max marginal delta .00953). The original GGUF buffer
             # layout passes that gate; this does NOT guarantee arbitrary
@@ -99,8 +137,10 @@ class LlamaCppRuntime:
             cp.kv_unified = True
             cp.n_threads = cp.n_threads_batch = self.n_threads
             cp.embeddings = False
-            cp.offload_kqv = False
-            cp.op_offload = False
+            # Keep the KV cache and non-matmul ops next to the offloaded
+            # weights; both flags are inert on the n_gpu_layers=0 CPU path.
+            cp.offload_kqv = self.n_gpu_layers != 0
+            cp.op_offload = self.n_gpu_layers != 0
             ctx = stack.enter_context(closing(_internals.LlamaContext(
                 model=model, params=cp, verbose=self.verbose)))
             memory = native.llama_get_memory(ctx.ctx)
@@ -113,7 +153,9 @@ class LlamaCppRuntime:
             self.n_ctx_seq = native.llama_n_ctx_seq(ctx.ctx)
             self.n_vocab = model.n_vocab()
             self.metadata = {"architecture": metadata["general.architecture"],
-                             "parameters": model.n_params(), "description": model.desc(),
+                             "parameters": model.n_params(),
+                             "description": (model.model_desc() if hasattr(model, "model_desc")
+                                             else model.desc()),
                              "llama_cpp_python": llama_cpp.__version__}
             self.model, self.ctx, self.memory, self.batch = model, ctx, memory, batch
             self.tokenizer = GGUFTokenizer(model)
@@ -125,6 +167,23 @@ class LlamaCppRuntime:
     def close(self):
         self._stack.close()
         self.model = self.tokenizer = self.ctx = self.memory = self.batch = None
+        self._boundary_cache.clear()
+
+    def boundary_tokens(self, prompt, suffix):
+        """Encode prompt+suffix with memoization.
+
+        The boundary-invariance check in decide_llamacpp re-encodes
+        prompt+suffix for every compiled field on every call; the encode is
+        deterministic per (prompt, suffix), so cache it per runtime.
+        """
+        key = (prompt, suffix)
+        tokens = self._boundary_cache.get(key)
+        if tokens is None:
+            tokens = self.tokenizer.encode(prompt + suffix)
+            if len(self._boundary_cache) >= 64:
+                self._boundary_cache.clear()
+            self._boundary_cache[key] = tokens
+        return tokens
 
     def __del__(self):
         # ExitStack itself does not run callbacks at GC. Native batch ownership
@@ -258,7 +317,7 @@ def decide_llamacpp(rt, context, schema, compiled, *, temperature=1.0,
     # retokenize a partial schema/context or inject BOS into suffixes. Keep the
     # compiler's intentional suffix/answer boundary fallback unchanged.
     for cf in compiled:
-        full = rt.tokenizer.encode(prompt + cf.suffix)
+        full = rt.boundary_tokens(prompt, cf.suffix)
         if full != tokens + cf.suffix_tokens:
             raise ValueError(f"prompt/suffix token boundary mismatch for {cf.row_name!r}")
         ids = [i for candidate in cf.candidate_ids for i in candidate]
@@ -319,7 +378,9 @@ def decide_llamacpp(rt, context, schema, compiled, *, temperature=1.0,
         pass_ms = (time.perf_counter() - t_pass) * 1000
         return {"values": values, "prefill_ms": prefill_ms, "pass_ms": pass_ms,
                 "chunks": chunks, "fields_evaluated": len(compiled),
-                "telemetry": {"backend": "llamacpp", "device": "cpu",
+                "telemetry": {"backend": "llamacpp",
+                              "device": "gpu" if rt.n_gpu_layers else "cpu",
+                              "n_gpu_layers": rt.n_gpu_layers,
                               "shared_prefix": False, "prompt_tokens": len(tokens),
                               "n_ctx": rt.n_ctx, "n_ctx_seq": rt.n_ctx_seq,
                               "n_batch": rt.n_batch, **rt.metadata, **rt.stats}}

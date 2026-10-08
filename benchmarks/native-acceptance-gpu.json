@@ -1,0 +1,2414 @@
+{
+  "status": "FAILED",
+  "synthetic_only": true,
+  "accuracy_evaluated": false,
+  "native_parallelism": "NOT_VERIFIED: architecture review and native trace required",
+  "model": "C:\\Users\\Richard\\Documents\\Projects\\sortkasten\\private\\models\\qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+  "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "repeats": 2,
+  "atol": 0.0001,
+  "contexts": {
+    "a": "Synthetic parcel record: fragile yes; color RED; parcel red; tags dry and light.",
+    "b": "Synthetic parcel record: fragile no; color BLUE; parcel blue; tags heavy.",
+    "long": "Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Synthetic inventory note: shelf seven contains sealed empty boxes. Parcel record: fragile no; color GREEN; other; tags dry and heavy."
+  },
+  "warmup": false,
+  "limitations": [
+    "Functional agreement is not proof of native KV branching or batched suffixes.",
+    "Reported phase timings require independent synchronization review.",
+    "No GPU/offload or accuracy claim follows from a passing synthetic contract."
+  ],
+  "model_sha256": "dfce12e3862a5283ccfb88221b48480e58745165de856439950d0f22590580db",
+  "checksum_ms": 2462.1537000020908,
+  "checksum_verified_against_expected": false,
+  "package_path": "C:\\Users\\Richard\\Documents\\Projects\\parallel-decisions\\src\\parallel_decisions\\__init__.py",
+  "source_sha256": {
+    "__init__.py": "b5871c1dbf20d92ae0dca17eab7bbd3690fb3e90031bdacdf50dacd7fcf5fc02",
+    "calibration.py": "0d20d4bc651fcdc2b8fb26c23ca0cb6f552cac88b95caf17b139bb07c6544bd6",
+    "cli.py": "fb08685bd2c6d7b9836d3dd499ac729d25e9b587d6f8c29ccb986ae34725af4e",
+    "config.py": "a891dc1a47b5550d2ec71389200843a4d1d795e11ea84f977760d542ea1281ae",
+    "engine.py": "8c98d4f361dce93cdd7080964576b2168fd681dbf2238ba2c898bad67771c3c5",
+    "engine_laya.py": "47dbe180d4c6ec3e9276ba7b772f42392d752e6cd39b0976c758fed4700d34da",
+    "engine_llamacpp.py": "379162aa2f709549d935ff4195d4ca6249516b053f0ba1f2ea8fbc05d19408de",
+    "engine_torch.py": "348366102ca892cdd7ff211b18845af34016b42c47c636fd260fe4f7c4edcd9b",
+    "lint.py": "9aa2443fb6a8166c9de00d2e32c6e75816ac8ce6b81f7787dc869625e852e52c",
+    "prompts.py": "9288215b71cf1bfd59253e01ca0f12b385900149132216350207d92759d4734e",
+    "schema.py": "d21d427c2e205cd5119e8475456af02e4b6c0018d7c97a0ab76dbb38e106e85f"
+  },
+  "llama_cpp_python_version": "0.4.2+cu124",
+  "load_ms": 1885.9066000004532,
+  "schema": [
+    {
+      "name": "fragile",
+      "type": "boolean",
+      "description": "Is the parcel fragile?"
+    },
+    {
+      "name": "color",
+      "type": "enum",
+      "description": "Recorded parcel color",
+      "choices": [
+        "RED",
+        "BLUE",
+        "GREEN"
+      ]
+    },
+    {
+      "name": "tags",
+      "type": "multi",
+      "description": "Recorded parcel tags",
+      "choices": [
+        "dry",
+        "light",
+        "heavy"
+      ]
+    },
+    {
+      "name": "long_named_collision_field",
+      "type": "enum",
+      "description": "Recorded parcel phrase",
+      "choices": [
+        "parcel red",
+        "parcel blue",
+        "other"
+      ]
+    }
+  ],
+  "compiled_rows": [
+    {
+      "name": "fragile",
+      "suffix_tokens": [
+        220,
+        330,
+        33198,
+        457,
+        788,
+        220
+      ],
+      "candidate_ids": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "sequences": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "collision": false
+    },
+    {
+      "name": "color",
+      "suffix_tokens": [
+        220,
+        330,
+        3423,
+        788,
+        330
+      ],
+      "candidate_ids": [
+        [
+          6504
+        ],
+        [
+          64330
+        ],
+        [
+          55954
+        ]
+      ],
+      "sequences": [
+        [
+          6504
+        ],
+        [
+          64330
+        ],
+        [
+          55954
+        ]
+      ],
+      "collision": false
+    },
+    {
+      "name": "tags[0]",
+      "suffix_tokens": [
+        220,
+        330,
+        14082,
+        58,
+        15,
+        60,
+        788,
+        220
+      ],
+      "candidate_ids": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "sequences": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "collision": false
+    },
+    {
+      "name": "tags[1]",
+      "suffix_tokens": [
+        220,
+        330,
+        14082,
+        58,
+        16,
+        60,
+        788,
+        220
+      ],
+      "candidate_ids": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "sequences": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "collision": false
+    },
+    {
+      "name": "tags[2]",
+      "suffix_tokens": [
+        220,
+        330,
+        14082,
+        58,
+        17,
+        60,
+        788,
+        220
+      ],
+      "candidate_ids": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "sequences": [
+        [
+          1866
+        ],
+        [
+          3849
+        ]
+      ],
+      "collision": false
+    },
+    {
+      "name": "long_named_collision_field",
+      "suffix_tokens": [
+        220,
+        330,
+        4825,
+        71834,
+        70375,
+        5013,
+        788,
+        330
+      ],
+      "candidate_ids": [
+        [
+          95920
+        ],
+        [
+          95920
+        ],
+        [
+          1575
+        ]
+      ],
+      "sequences": [
+        [
+          95920,
+          2518
+        ],
+        [
+          95920,
+          6303
+        ],
+        [
+          1575
+        ]
+      ],
+      "collision": true
+    }
+  ],
+  "runs": [
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999476891773,
+          "raw_probability": 0.9999999476891773,
+          "distribution": {
+            "true": 0.9999999476891773,
+            "false": 5.231082279885231e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999858044657,
+          "raw_probability": 0.9999999858044657,
+          "distribution": {
+            "RED": 0.9999999858044657,
+            "BLUE": 4.007927872240885e-09,
+            "GREEN": 1.0187606529765196e-08
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9763489874049243,
+          "raw_probability": 0.9763489874049243,
+          "distribution": {
+            "dry": 0.9763489874049243,
+            "light": 0.9993486299731886,
+            "heavy": 0.9790735426336684
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990325387654,
+          "raw_probability": 0.9999990325387654,
+          "distribution": {
+            "parcel red": 0.9999990325387654,
+            "parcel blue": 6.295811448999595e-07,
+            "other": 3.3788008968453413e-07
+          }
+        }
+      },
+      "latency_ms": 193.54549999843584,
+      "prefill_ms": 100.86880000017118,
+      "pass_ms": 88.81190000101924,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "a",
+      "row_limit": 8,
+      "repetition": 0,
+      "wall_ms": 193.58569999894826,
+      "cold_request": true
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999998963630156,
+          "raw_probability": 0.9999998963630156,
+          "distribution": {
+            "true": 1.0363698456584511e-07,
+            "false": 0.9999998963630156
+          }
+        },
+        "color": {
+          "value": "BLUE",
+          "probability": 0.9999999918452441,
+          "raw_probability": 0.9999999918452441,
+          "distribution": {
+            "RED": 6.554931932400055e-09,
+            "BLUE": 0.9999999918452441,
+            "GREEN": 1.599824021139356e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9980598495342102,
+          "raw_probability": 0.9980598495342102,
+          "distribution": {
+            "dry": 0.0032266837662370007,
+            "light": 0.9980598495342102,
+            "heavy": 0.9992200766964244
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel blue",
+          "probability": 0.9999826415138482,
+          "raw_probability": 0.9999826415138482,
+          "distribution": {
+            "parcel red": 1.1009853337892458e-07,
+            "parcel blue": 0.9999826415138482,
+            "other": 1.7248387618547836e-05
+          }
+        }
+      },
+      "latency_ms": 162.12190000078408,
+      "prefill_ms": 80.44110000264482,
+      "pass_ms": 79.33970000158297,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 119,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "b",
+      "row_limit": 8,
+      "repetition": 0,
+      "wall_ms": 162.1554000012111,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999995307683637,
+          "raw_probability": 0.9999995307683637,
+          "distribution": {
+            "true": 4.69231636350284e-07,
+            "false": 0.9999995307683637
+          }
+        },
+        "color": {
+          "value": "GREEN",
+          "probability": 0.9999999767455287,
+          "raw_probability": 0.9999999767455287,
+          "distribution": {
+            "RED": 2.1692910996726197e-08,
+            "BLUE": 1.561560360512623e-09,
+            "GREEN": 0.9999999767455287
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9513514631447884,
+          "raw_probability": 0.9513514631447884,
+          "distribution": {
+            "dry": 0.06292313319599313,
+            "light": 0.9513514631447884,
+            "heavy": 0.9888195970426886
+          }
+        },
+        "long_named_collision_field": {
+          "value": "other",
+          "probability": 0.8255704464100282,
+          "raw_probability": 0.8255704464100282,
+          "distribution": {
+            "parcel red": 0.011359328121476995,
+            "parcel blue": 0.16307022546849473,
+            "other": 0.8255704464100282
+          }
+        }
+      },
+      "latency_ms": 323.9552000013646,
+      "prefill_ms": 238.39000000225496,
+      "pass_ms": 81.15689999976894,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 383,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "long",
+      "row_limit": 8,
+      "repetition": 0,
+      "wall_ms": 323.98689999899943,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999476891773,
+          "raw_probability": 0.9999999476891773,
+          "distribution": {
+            "true": 0.9999999476891773,
+            "false": 5.231082279885231e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999858044657,
+          "raw_probability": 0.9999999858044657,
+          "distribution": {
+            "RED": 0.9999999858044657,
+            "BLUE": 4.007927872240885e-09,
+            "GREEN": 1.0187606529765196e-08
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9763489874049243,
+          "raw_probability": 0.9763489874049243,
+          "distribution": {
+            "dry": 0.9763489874049243,
+            "light": 0.9993486299731886,
+            "heavy": 0.9790735426336684
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990325387654,
+          "raw_probability": 0.9999990325387654,
+          "distribution": {
+            "parcel red": 0.9999990325387654,
+            "parcel blue": 6.295811448999595e-07,
+            "other": 3.3788008968453413e-07
+          }
+        }
+      },
+      "latency_ms": 162.6018999995722,
+      "prefill_ms": 81.1801000018022,
+      "pass_ms": 79.4488999999885,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "a",
+      "row_limit": 8,
+      "repetition": 0,
+      "wall_ms": 162.6323999989836,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999512445318,
+          "raw_probability": 0.9999999512445318,
+          "distribution": {
+            "true": 0.9999999512445318,
+            "false": 4.875546809358269e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999923533612,
+          "raw_probability": 0.9999999923533612,
+          "distribution": {
+            "RED": 0.9999999923533612,
+            "BLUE": 2.0122284172812337e-09,
+            "GREEN": 5.634410385997726e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9672949918904691,
+          "raw_probability": 0.9672949918904691,
+          "distribution": {
+            "dry": 0.9672949918904691,
+            "light": 0.9992030502186395,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990968610951,
+          "raw_probability": 0.9999990968610951,
+          "distribution": {
+            "parcel red": 0.9999990968610951,
+            "parcel blue": 4.4905049085355573e-07,
+            "other": 4.540884139561796e-07
+          }
+        }
+      },
+      "latency_ms": 254.78579999980866,
+      "prefill_ms": 85.44780000011087,
+      "pass_ms": 167.59489999822108,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 0,
+      "wall_ms": 254.82329999795184,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999998990202152,
+          "raw_probability": 0.9999998990202152,
+          "distribution": {
+            "true": 1.0097978482898574e-07,
+            "false": 0.9999998990202152
+          }
+        },
+        "color": {
+          "value": "BLUE",
+          "probability": 0.9999999932664392,
+          "raw_probability": 0.9999999932664392,
+          "distribution": {
+            "RED": 5.502251996218225e-09,
+            "BLUE": 0.9999999932664392,
+            "GREEN": 1.2313087314662445e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9980150314204812,
+          "raw_probability": 0.9980150314204812,
+          "distribution": {
+            "dry": 0.003361025400291587,
+            "light": 0.9980150314204812,
+            "heavy": 0.9993248601353012
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel blue",
+          "probability": 0.9999807031866138,
+          "raw_probability": 0.9999807031866138,
+          "distribution": {
+            "parcel red": 8.519731034246153e-08,
+            "parcel blue": 0.9999807031866138,
+            "other": 1.9211616075932914e-05
+          }
+        }
+      },
+      "latency_ms": 254.6632999983558,
+      "prefill_ms": 84.77700000003097,
+      "pass_ms": 167.38270000132616,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 119,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "b",
+      "row_limit": 2,
+      "repetition": 0,
+      "wall_ms": 254.69750000047497,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.999999498190943,
+          "raw_probability": 0.999999498190943,
+          "distribution": {
+            "true": 5.018090569772913e-07,
+            "false": 0.999999498190943
+          }
+        },
+        "color": {
+          "value": "GREEN",
+          "probability": 0.9999999698243511,
+          "raw_probability": 0.9999999698243511,
+          "distribution": {
+            "RED": 2.8503700443057235e-08,
+            "BLUE": 1.6719483239057324e-09,
+            "GREEN": 0.9999999698243511
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9464843269417961,
+          "raw_probability": 0.9464843269417961,
+          "distribution": {
+            "dry": 0.037052136204516965,
+            "light": 0.9464843269417961,
+            "heavy": 0.9899825619277298
+          }
+        },
+        "long_named_collision_field": {
+          "value": "other",
+          "probability": 0.8614924796252015,
+          "raw_probability": 0.8614924796252015,
+          "distribution": {
+            "parcel red": 0.013164092576344258,
+            "parcel blue": 0.12534342779845425,
+            "other": 0.8614924796252015
+          }
+        }
+      },
+      "latency_ms": 409.28880000137724,
+      "prefill_ms": 239.5472999996855,
+      "pass_ms": 167.68889999730163,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 383,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "long",
+      "row_limit": 2,
+      "repetition": 0,
+      "wall_ms": 409.3222000010428,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999512445318,
+          "raw_probability": 0.9999999512445318,
+          "distribution": {
+            "true": 0.9999999512445318,
+            "false": 4.875546809358269e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999923533612,
+          "raw_probability": 0.9999999923533612,
+          "distribution": {
+            "RED": 0.9999999923533612,
+            "BLUE": 2.0122284172812337e-09,
+            "GREEN": 5.634410385997726e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9672949918904691,
+          "raw_probability": 0.9672949918904691,
+          "distribution": {
+            "dry": 0.9672949918904691,
+            "light": 0.9992030502186395,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990968610951,
+          "raw_probability": 0.9999990968610951,
+          "distribution": {
+            "parcel red": 0.9999990968610951,
+            "parcel blue": 4.4905049085355573e-07,
+            "other": 4.540884139561796e-07
+          }
+        }
+      },
+      "latency_ms": 256.67949999842676,
+      "prefill_ms": 84.63860000119894,
+      "pass_ms": 170.28449999997974,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 0,
+      "wall_ms": 256.71739999961574,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999463343208,
+          "raw_probability": 0.9999999463343208,
+          "distribution": {
+            "true": 0.9999999463343208,
+            "false": 5.366567928852961e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999871112747,
+          "raw_probability": 0.9999999871112747,
+          "distribution": {
+            "RED": 0.9999999871112747,
+            "BLUE": 3.6739060037928623e-09,
+            "GREEN": 9.214819227377803e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9646953744168751,
+          "raw_probability": 0.9646953744168751,
+          "distribution": {
+            "dry": 0.9646953744168751,
+            "light": 0.9991705096184569,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999988419613676,
+          "raw_probability": 0.9999988419613676,
+          "distribution": {
+            "parcel red": 0.9999988419613676,
+            "parcel blue": 7.039446546409598e-07,
+            "other": 4.540939778544934e-07
+          }
+        }
+      },
+      "latency_ms": 369.052299996838,
+      "prefill_ms": 84.62300000246614,
+      "pass_ms": 282.4899999977788,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 0,
+      "wall_ms": 369.0902999987884,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999998970729816,
+          "raw_probability": 0.9999998970729816,
+          "distribution": {
+            "true": 1.0292701823271756e-07,
+            "false": 0.9999998970729816
+          }
+        },
+        "color": {
+          "value": "BLUE",
+          "probability": 0.999999990842089,
+          "raw_probability": 0.999999990842089,
+          "distribution": {
+            "RED": 7.501146206010638e-09,
+            "BLUE": 0.999999990842089,
+            "GREEN": 1.6567647914484144e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9983558949255051,
+          "raw_probability": 0.9983558949255051,
+          "distribution": {
+            "dry": 0.002970476041920041,
+            "light": 0.9983558949255051,
+            "heavy": 0.9993248601353012
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel blue",
+          "probability": 0.9999806894367431,
+          "raw_probability": 0.9999806894367431,
+          "distribution": {
+            "parcel red": 9.957062817100912e-08,
+            "parcel blue": 0.9999806894367431,
+            "other": 1.921099262872225e-05
+          }
+        }
+      },
+      "latency_ms": 368.28549999700044,
+      "prefill_ms": 84.88759999818285,
+      "pass_ms": 281.473900002311,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 119,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "b",
+      "row_limit": 1,
+      "repetition": 0,
+      "wall_ms": 368.31940000047325,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999995234376764,
+          "raw_probability": 0.9999995234376764,
+          "distribution": {
+            "true": 4.765623237216806e-07,
+            "false": 0.9999995234376764
+          }
+        },
+        "color": {
+          "value": "GREEN",
+          "probability": 0.9999999748852382,
+          "raw_probability": 0.9999999748852382,
+          "distribution": {
+            "RED": 2.3511932550051192e-08,
+            "BLUE": 1.602829412809773e-09,
+            "GREEN": 0.9999999748852382
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9509788730107841,
+          "raw_probability": 0.9509788730107841,
+          "distribution": {
+            "dry": 0.04734365088568216,
+            "light": 0.9509788730107841,
+            "heavy": 0.9899825619277298
+          }
+        },
+        "long_named_collision_field": {
+          "value": "other",
+          "probability": 0.8842535806553428,
+          "raw_probability": 0.8842535806553428,
+          "distribution": {
+            "parcel red": 0.008631544531131543,
+            "parcel blue": 0.10711487481352558,
+            "other": 0.8842535806553428
+          }
+        }
+      },
+      "latency_ms": 525.9567000030074,
+      "prefill_ms": 240.5389000014111,
+      "pass_ms": 283.29849999863654,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 383,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "long",
+      "row_limit": 1,
+      "repetition": 0,
+      "wall_ms": 525.9962999989511,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999463343208,
+          "raw_probability": 0.9999999463343208,
+          "distribution": {
+            "true": 0.9999999463343208,
+            "false": 5.366567928852961e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999871112747,
+          "raw_probability": 0.9999999871112747,
+          "distribution": {
+            "RED": 0.9999999871112747,
+            "BLUE": 3.6739060037928623e-09,
+            "GREEN": 9.214819227377803e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9646953744168751,
+          "raw_probability": 0.9646953744168751,
+          "distribution": {
+            "dry": 0.9646953744168751,
+            "light": 0.9991705096184569,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999988419613676,
+          "raw_probability": 0.9999988419613676,
+          "distribution": {
+            "parcel red": 0.9999988419613676,
+            "parcel blue": 7.039446546409598e-07,
+            "other": 4.540939778544934e-07
+          }
+        }
+      },
+      "latency_ms": 373.7390999995114,
+      "prefill_ms": 84.26310000140802,
+      "pass_ms": 287.10420000061276,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 0,
+      "wall_ms": 373.77489999926183,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999463343208,
+          "raw_probability": 0.9999999463343208,
+          "distribution": {
+            "true": 0.9999999463343208,
+            "false": 5.366567928852961e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999871112747,
+          "raw_probability": 0.9999999871112747,
+          "distribution": {
+            "RED": 0.9999999871112747,
+            "BLUE": 3.6739060037928623e-09,
+            "GREEN": 9.214819227377803e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9646953744168751,
+          "raw_probability": 0.9646953744168751,
+          "distribution": {
+            "dry": 0.9646953744168751,
+            "light": 0.9991705096184569,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999988419613676,
+          "raw_probability": 0.9999988419613676,
+          "distribution": {
+            "parcel red": 0.9999988419613676,
+            "parcel blue": 7.039446546409598e-07,
+            "other": 4.540939778544934e-07
+          }
+        }
+      },
+      "latency_ms": 370.52679999760585,
+      "prefill_ms": 86.01609999823268,
+      "pass_ms": 282.71570000288193,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 1,
+      "wall_ms": 370.56250000023283,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999998970729816,
+          "raw_probability": 0.9999998970729816,
+          "distribution": {
+            "true": 1.0292701823271756e-07,
+            "false": 0.9999998970729816
+          }
+        },
+        "color": {
+          "value": "BLUE",
+          "probability": 0.999999990842089,
+          "raw_probability": 0.999999990842089,
+          "distribution": {
+            "RED": 7.501146206010638e-09,
+            "BLUE": 0.999999990842089,
+            "GREEN": 1.6567647914484144e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9983558949255051,
+          "raw_probability": 0.9983558949255051,
+          "distribution": {
+            "dry": 0.002970476041920041,
+            "light": 0.9983558949255051,
+            "heavy": 0.9993248601353012
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel blue",
+          "probability": 0.9999806894367431,
+          "raw_probability": 0.9999806894367431,
+          "distribution": {
+            "parcel red": 9.957062817100912e-08,
+            "parcel blue": 0.9999806894367431,
+            "other": 1.921099262872225e-05
+          }
+        }
+      },
+      "latency_ms": 368.26420000215876,
+      "prefill_ms": 84.15949999834993,
+      "pass_ms": 282.3473999997077,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 119,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "b",
+      "row_limit": 1,
+      "repetition": 1,
+      "wall_ms": 368.2958999997936,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999995234376764,
+          "raw_probability": 0.9999995234376764,
+          "distribution": {
+            "true": 4.765623237216806e-07,
+            "false": 0.9999995234376764
+          }
+        },
+        "color": {
+          "value": "GREEN",
+          "probability": 0.9999999748852382,
+          "raw_probability": 0.9999999748852382,
+          "distribution": {
+            "RED": 2.3511932550051192e-08,
+            "BLUE": 1.602829412809773e-09,
+            "GREEN": 0.9999999748852382
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9509788730107841,
+          "raw_probability": 0.9509788730107841,
+          "distribution": {
+            "dry": 0.04734365088568216,
+            "light": 0.9509788730107841,
+            "heavy": 0.9899825619277298
+          }
+        },
+        "long_named_collision_field": {
+          "value": "other",
+          "probability": 0.8842535806553428,
+          "raw_probability": 0.8842535806553428,
+          "distribution": {
+            "parcel red": 0.008631544531131543,
+            "parcel blue": 0.10711487481352558,
+            "other": 0.8842535806553428
+          }
+        }
+      },
+      "latency_ms": 528.9907000005769,
+      "prefill_ms": 242.52159999741707,
+      "pass_ms": 284.438599999703,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 383,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "long",
+      "row_limit": 1,
+      "repetition": 1,
+      "wall_ms": 529.0222999974503,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999463343208,
+          "raw_probability": 0.9999999463343208,
+          "distribution": {
+            "true": 0.9999999463343208,
+            "false": 5.366567928852961e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999871112747,
+          "raw_probability": 0.9999999871112747,
+          "distribution": {
+            "RED": 0.9999999871112747,
+            "BLUE": 3.6739060037928623e-09,
+            "GREEN": 9.214819227377803e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9646953744168751,
+          "raw_probability": 0.9646953744168751,
+          "distribution": {
+            "dry": 0.9646953744168751,
+            "light": 0.9991705096184569,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999988419613676,
+          "raw_probability": 0.9999988419613676,
+          "distribution": {
+            "parcel red": 0.9999988419613676,
+            "parcel blue": 7.039446546409598e-07,
+            "other": 4.540939778544934e-07
+          }
+        }
+      },
+      "latency_ms": 369.77829999887035,
+      "prefill_ms": 84.47380000143312,
+      "pass_ms": 283.5028000008606,
+      "chunks": 6,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 9,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 0,
+        "max_parallel_rows": 1
+      },
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 1,
+      "wall_ms": 369.8106999981974,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999512445318,
+          "raw_probability": 0.9999999512445318,
+          "distribution": {
+            "true": 0.9999999512445318,
+            "false": 4.875546809358269e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999923533612,
+          "raw_probability": 0.9999999923533612,
+          "distribution": {
+            "RED": 0.9999999923533612,
+            "BLUE": 2.0122284172812337e-09,
+            "GREEN": 5.634410385997726e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9672949918904691,
+          "raw_probability": 0.9672949918904691,
+          "distribution": {
+            "dry": 0.9672949918904691,
+            "light": 0.9992030502186395,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990968610951,
+          "raw_probability": 0.9999990968610951,
+          "distribution": {
+            "parcel red": 0.9999990968610951,
+            "parcel blue": 4.4905049085355573e-07,
+            "other": 4.540884139561796e-07
+          }
+        }
+      },
+      "latency_ms": 255.89360000230954,
+      "prefill_ms": 85.60930000021472,
+      "pass_ms": 168.5524999993504,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 1,
+      "wall_ms": 255.92479999977513,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999998990202152,
+          "raw_probability": 0.9999998990202152,
+          "distribution": {
+            "true": 1.0097978482898574e-07,
+            "false": 0.9999998990202152
+          }
+        },
+        "color": {
+          "value": "BLUE",
+          "probability": 0.9999999932664392,
+          "raw_probability": 0.9999999932664392,
+          "distribution": {
+            "RED": 5.502251996218225e-09,
+            "BLUE": 0.9999999932664392,
+            "GREEN": 1.2313087314662445e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9980150314204812,
+          "raw_probability": 0.9980150314204812,
+          "distribution": {
+            "dry": 0.003361025400291587,
+            "light": 0.9980150314204812,
+            "heavy": 0.9993248601353012
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel blue",
+          "probability": 0.9999807031866138,
+          "raw_probability": 0.9999807031866138,
+          "distribution": {
+            "parcel red": 8.519731034246153e-08,
+            "parcel blue": 0.9999807031866138,
+            "other": 1.9211616075932914e-05
+          }
+        }
+      },
+      "latency_ms": 255.51740000082646,
+      "prefill_ms": 85.56990000215592,
+      "pass_ms": 167.95180000190157,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 119,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "b",
+      "row_limit": 2,
+      "repetition": 1,
+      "wall_ms": 255.55739999981597,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.999999498190943,
+          "raw_probability": 0.999999498190943,
+          "distribution": {
+            "true": 5.018090569772913e-07,
+            "false": 0.999999498190943
+          }
+        },
+        "color": {
+          "value": "GREEN",
+          "probability": 0.9999999698243511,
+          "raw_probability": 0.9999999698243511,
+          "distribution": {
+            "RED": 2.8503700443057235e-08,
+            "BLUE": 1.6719483239057324e-09,
+            "GREEN": 0.9999999698243511
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9464843269417961,
+          "raw_probability": 0.9464843269417961,
+          "distribution": {
+            "dry": 0.037052136204516965,
+            "light": 0.9464843269417961,
+            "heavy": 0.9899825619277298
+          }
+        },
+        "long_named_collision_field": {
+          "value": "other",
+          "probability": 0.8614924796252015,
+          "raw_probability": 0.8614924796252015,
+          "distribution": {
+            "parcel red": 0.013164092576344258,
+            "parcel blue": 0.12534342779845425,
+            "other": 0.8614924796252015
+          }
+        }
+      },
+      "latency_ms": 418.03600000275765,
+      "prefill_ms": 243.48749999990105,
+      "pass_ms": 172.03599999993457,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 383,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "long",
+      "row_limit": 2,
+      "repetition": 1,
+      "wall_ms": 418.0751000021701,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999512445318,
+          "raw_probability": 0.9999999512445318,
+          "distribution": {
+            "true": 0.9999999512445318,
+            "false": 4.875546809358269e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999923533612,
+          "raw_probability": 0.9999999923533612,
+          "distribution": {
+            "RED": 0.9999999923533612,
+            "BLUE": 2.0122284172812337e-09,
+            "GREEN": 5.634410385997726e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9672949918904691,
+          "raw_probability": 0.9672949918904691,
+          "distribution": {
+            "dry": 0.9672949918904691,
+            "light": 0.9992030502186395,
+            "heavy": 0.9784794967660301
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990968610951,
+          "raw_probability": 0.9999990968610951,
+          "distribution": {
+            "parcel red": 0.9999990968610951,
+            "parcel blue": 4.4905049085355573e-07,
+            "other": 4.540884139561796e-07
+          }
+        }
+      },
+      "latency_ms": 256.73359999927925,
+      "prefill_ms": 83.67279999947641,
+      "pass_ms": 171.29080000086105,
+      "chunks": 3,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 6,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 3,
+        "max_parallel_rows": 2
+      },
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 1,
+      "wall_ms": 256.7657999970834,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999476891773,
+          "raw_probability": 0.9999999476891773,
+          "distribution": {
+            "true": 0.9999999476891773,
+            "false": 5.231082279885231e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999858044657,
+          "raw_probability": 0.9999999858044657,
+          "distribution": {
+            "RED": 0.9999999858044657,
+            "BLUE": 4.007927872240885e-09,
+            "GREEN": 1.0187606529765196e-08
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9763489874049243,
+          "raw_probability": 0.9763489874049243,
+          "distribution": {
+            "dry": 0.9763489874049243,
+            "light": 0.9993486299731886,
+            "heavy": 0.9790735426336684
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990325387654,
+          "raw_probability": 0.9999990325387654,
+          "distribution": {
+            "parcel red": 0.9999990325387654,
+            "parcel blue": 6.295811448999595e-07,
+            "other": 3.3788008968453413e-07
+          }
+        }
+      },
+      "latency_ms": 167.76890000255662,
+      "prefill_ms": 84.66309999857913,
+      "pass_ms": 81.37139999962528,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "a",
+      "row_limit": 8,
+      "repetition": 1,
+      "wall_ms": 167.7999000021373,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999998963630156,
+          "raw_probability": 0.9999998963630156,
+          "distribution": {
+            "true": 1.0363698456584511e-07,
+            "false": 0.9999998963630156
+          }
+        },
+        "color": {
+          "value": "BLUE",
+          "probability": 0.9999999918452441,
+          "raw_probability": 0.9999999918452441,
+          "distribution": {
+            "RED": 6.554931932400055e-09,
+            "BLUE": 0.9999999918452441,
+            "GREEN": 1.599824021139356e-09
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9980598495342102,
+          "raw_probability": 0.9980598495342102,
+          "distribution": {
+            "dry": 0.0032266837662370007,
+            "light": 0.9980598495342102,
+            "heavy": 0.9992200766964244
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel blue",
+          "probability": 0.9999826415138482,
+          "raw_probability": 0.9999826415138482,
+          "distribution": {
+            "parcel red": 1.1009853337892458e-07,
+            "parcel blue": 0.9999826415138482,
+            "other": 1.7248387618547836e-05
+          }
+        }
+      },
+      "latency_ms": 164.43340000114404,
+      "prefill_ms": 82.86790000056499,
+      "pass_ms": 79.81830000062473,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 119,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "b",
+      "row_limit": 8,
+      "repetition": 1,
+      "wall_ms": 164.46409999844036,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": false,
+          "probability": 0.9999995307683637,
+          "raw_probability": 0.9999995307683637,
+          "distribution": {
+            "true": 4.69231636350284e-07,
+            "false": 0.9999995307683637
+          }
+        },
+        "color": {
+          "value": "GREEN",
+          "probability": 0.9999999767455287,
+          "raw_probability": 0.9999999767455287,
+          "distribution": {
+            "RED": 2.1692910996726197e-08,
+            "BLUE": 1.561560360512623e-09,
+            "GREEN": 0.9999999767455287
+          }
+        },
+        "tags": {
+          "value": [
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9513514631447884,
+          "raw_probability": 0.9513514631447884,
+          "distribution": {
+            "dry": 0.06292313319599313,
+            "light": 0.9513514631447884,
+            "heavy": 0.9888195970426886
+          }
+        },
+        "long_named_collision_field": {
+          "value": "other",
+          "probability": 0.8255704464100282,
+          "raw_probability": 0.8255704464100282,
+          "distribution": {
+            "parcel red": 0.011359328121476995,
+            "parcel blue": 0.16307022546849473,
+            "other": 0.8255704464100282
+          }
+        }
+      },
+      "latency_ms": 325.75220000217087,
+      "prefill_ms": 241.85399999987567,
+      "pass_ms": 81.68420000220067,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 383,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "long",
+      "row_limit": 8,
+      "repetition": 1,
+      "wall_ms": 325.7882999969297,
+      "cold_request": false
+    },
+    {
+      "fields": {
+        "fragile": {
+          "value": true,
+          "probability": 0.9999999476891773,
+          "raw_probability": 0.9999999476891773,
+          "distribution": {
+            "true": 0.9999999476891773,
+            "false": 5.231082279885231e-08
+          }
+        },
+        "color": {
+          "value": "RED",
+          "probability": 0.9999999858044657,
+          "raw_probability": 0.9999999858044657,
+          "distribution": {
+            "RED": 0.9999999858044657,
+            "BLUE": 4.007927872240885e-09,
+            "GREEN": 1.0187606529765196e-08
+          }
+        },
+        "tags": {
+          "value": [
+            "dry",
+            "light",
+            "heavy"
+          ],
+          "probability": 0.9763489874049243,
+          "raw_probability": 0.9763489874049243,
+          "distribution": {
+            "dry": 0.9763489874049243,
+            "light": 0.9993486299731886,
+            "heavy": 0.9790735426336684
+          }
+        },
+        "long_named_collision_field": {
+          "value": "parcel red",
+          "probability": 0.9999990325387654,
+          "raw_probability": 0.9999990325387654,
+          "distribution": {
+            "parcel red": 0.9999990325387654,
+            "parcel blue": 6.295811448999595e-07,
+            "other": 3.3788008968453413e-07
+          }
+        }
+      },
+      "latency_ms": 165.46070000185864,
+      "prefill_ms": 83.7952999972913,
+      "pass_ms": 79.66599999781465,
+      "chunks": 1,
+      "fields_evaluated": 6,
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 121,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      },
+      "context_id": "a",
+      "row_limit": 8,
+      "repetition": 1,
+      "wall_ms": 165.50640000059502,
+      "cold_request": false
+    }
+  ],
+  "comparisons": [
+    {
+      "passed": true,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.0,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 8,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.009053995514455182,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.00013434163405458624,
+      "atol": 0.0001,
+      "context_id": "b",
+      "row_limit": 2,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.037726797670040474,
+      "atol": 0.0001,
+      "context_id": "long",
+      "row_limit": 2,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.009053995514455182,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.011653612988049122,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.0002960453912949079,
+      "atol": 0.0001,
+      "context_id": "b",
+      "row_limit": 1,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.05868313424531457,
+      "atol": 0.0001,
+      "context_id": "long",
+      "row_limit": 1,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.011653612988049122,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 0
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.011653612988049122,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 1
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.0002960453912949079,
+      "atol": 0.0001,
+      "context_id": "b",
+      "row_limit": 1,
+      "repetition": 1
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.05868313424531457,
+      "atol": 0.0001,
+      "context_id": "long",
+      "row_limit": 1,
+      "repetition": 1
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.011653612988049122,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 1,
+      "repetition": 1
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.009053995514455182,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 1
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.00013434163405458624,
+      "atol": 0.0001,
+      "context_id": "b",
+      "row_limit": 2,
+      "repetition": 1
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.037726797670040474,
+      "atol": 0.0001,
+      "context_id": "long",
+      "row_limit": 2,
+      "repetition": 1
+    },
+    {
+      "passed": false,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.009053995514455182,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 2,
+      "repetition": 1
+    },
+    {
+      "passed": true,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.0,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 8,
+      "repetition": 1
+    },
+    {
+      "passed": true,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.0,
+      "atol": 0.0001,
+      "context_id": "b",
+      "row_limit": 8,
+      "repetition": 1
+    },
+    {
+      "passed": true,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.0,
+      "atol": 0.0001,
+      "context_id": "long",
+      "row_limit": 8,
+      "repetition": 1
+    },
+    {
+      "passed": true,
+      "changed_values": [],
+      "max_abs_distribution_delta": 0.0,
+      "atol": 0.0001,
+      "context_id": "a",
+      "row_limit": 8,
+      "repetition": 1
+    }
+  ],
+  "singleton_schema": {
+    "fields": {
+      "only": {
+        "value": true,
+        "probability": 0.9999895609932093,
+        "raw_probability": 0.9999895609932093,
+        "distribution": {
+          "true": 0.9999895609932093,
+          "false": 1.0439006790701984e-05
+        }
+      }
+    },
+    "latency_ms": 72.0629999996163,
+    "prefill_ms": 42.47439999744529,
+    "pass_ms": 27.91839999918011,
+    "chunks": 1,
+    "fields_evaluated": 1,
+    "telemetry": {
+      "backend": "llamacpp",
+      "device": "gpu",
+      "n_gpu_layers": -1,
+      "shared_prefix": false,
+      "prompt_tokens": 47,
+      "n_ctx": 4096,
+      "n_ctx_seq": 4096,
+      "n_batch": 512,
+      "architecture": "qwen2",
+      "parameters": 7615616512,
+      "description": "qwen2 7B Q4_K - Medium",
+      "llama_cpp_python": "0.4.2+cu124",
+      "prefill_calls": 1,
+      "prefill_decode_calls": 1,
+      "decode_calls": 2,
+      "sequence_copies": 1,
+      "parallel_decode_calls": 0,
+      "max_parallel_rows": 1
+    }
+  },
+  "calibration": {
+    "fields": {
+      "fragile": {
+        "value": true,
+        "probability": 0.9997713366991877,
+        "raw_probability": 0.9999999476891773,
+        "distribution": {
+          "true": 0.9997713366991877,
+          "false": 0.0002286633008122982
+        }
+      },
+      "color": {
+        "value": "RED",
+        "probability": 0.999835785098371,
+        "raw_probability": 0.9999999858044657,
+        "distribution": {
+          "RED": 0.999835785098371,
+          "BLUE": 6.329780181202385e-05,
+          "GREEN": 0.00010091709981689139
+        }
+      },
+      "tags": {
+        "value": [
+          "dry",
+          "light",
+          "heavy"
+        ],
+        "probability": 0.865321083179771,
+        "raw_probability": 0.9763489874049243,
+        "distribution": {
+          "dry": 0.865321083179771,
+          "light": 0.9751053003143323,
+          "heavy": 0.8724499274595977
+        }
+      },
+      "long_named_collision_field": {
+        "value": "parcel red",
+        "probability": 0.9986271506069084,
+        "raw_probability": 0.9999990325387654,
+        "distribution": {
+          "parcel red": 0.9986271506069084,
+          "parcel blue": 0.0007923725756994707,
+          "other": 0.000580476817391986
+        }
+      }
+    },
+    "latency_ms": 168.37850000229082,
+    "prefill_ms": 85.4576999990968,
+    "pass_ms": 80.79990000260295,
+    "chunks": 1,
+    "fields_evaluated": 6,
+    "telemetry": {
+      "backend": "llamacpp",
+      "device": "gpu",
+      "n_gpu_layers": -1,
+      "shared_prefix": false,
+      "prompt_tokens": 121,
+      "n_ctx": 4096,
+      "n_ctx_seq": 4096,
+      "n_batch": 512,
+      "architecture": "qwen2",
+      "parameters": 7615616512,
+      "description": "qwen2 7B Q4_K - Medium",
+      "llama_cpp_python": "0.4.2+cu124",
+      "prefill_calls": 1,
+      "prefill_decode_calls": 1,
+      "decode_calls": 3,
+      "sequence_copies": 8,
+      "parallel_decode_calls": 2,
+      "max_parallel_rows": 5
+    }
+  },
+  "context_distribution_delta": 0.9999999878373163,
+  "context_sensitivity_observed": true,
+  "error": {
+    "type": "ContractError",
+    "message": "singleton/chunk/repeated-context equivalence failed; inspect raw comparisons"
+  }
+}

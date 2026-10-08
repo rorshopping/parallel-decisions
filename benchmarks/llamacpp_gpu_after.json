@@ -1,0 +1,181 @@
+{
+  "model": "qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf",
+  "model_size_gb": 3.99,
+  "llama_cpp_version": "0.4.2+cu124",
+  "n_gpu_layers_arg": -1,
+  "load_s": 1.67,
+  "wall_ms_median": 261.8,
+  "prefill_ms_median": null,
+  "pass_ms_median": null,
+  "peak_vram_mib": 5415,
+  "values": {
+    "is_fraudulent": {
+      "value": true,
+      "probability": 0.999795005
+    },
+    "risk_tier": {
+      "value": "high",
+      "probability": 0.633192667
+    },
+    "charge_scope": {
+      "value": "not_ours",
+      "probability": 0.931413689
+    },
+    "actions": {
+      "value": [
+        "contact_cardholder",
+        "close_session"
+      ],
+      "probability": 0.989656913
+    }
+  },
+  "runs": [
+    {
+      "run": 1,
+      "wall_ms": 284.9,
+      "prefill_ms": null,
+      "pass_ms": null,
+      "device": "gpu",
+      "n_gpu_layers": -1,
+      "values": {
+        "is_fraudulent": {
+          "value": true,
+          "probability": 0.999795005
+        },
+        "risk_tier": {
+          "value": "high",
+          "probability": 0.633192667
+        },
+        "charge_scope": {
+          "value": "not_ours",
+          "probability": 0.931413689
+        },
+        "actions": {
+          "value": [
+            "contact_cardholder",
+            "close_session"
+          ],
+          "probability": 0.989656913
+        }
+      },
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 263,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      }
+    },
+    {
+      "run": 2,
+      "wall_ms": 261.8,
+      "prefill_ms": null,
+      "pass_ms": null,
+      "device": "gpu",
+      "n_gpu_layers": -1,
+      "values": {
+        "is_fraudulent": {
+          "value": true,
+          "probability": 0.999795005
+        },
+        "risk_tier": {
+          "value": "high",
+          "probability": 0.633192667
+        },
+        "charge_scope": {
+          "value": "not_ours",
+          "probability": 0.931413689
+        },
+        "actions": {
+          "value": [
+            "contact_cardholder",
+            "close_session"
+          ],
+          "probability": 0.989656913
+        }
+      },
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 263,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      }
+    },
+    {
+      "run": 3,
+      "wall_ms": 261.6,
+      "prefill_ms": null,
+      "pass_ms": null,
+      "device": "gpu",
+      "n_gpu_layers": -1,
+      "values": {
+        "is_fraudulent": {
+          "value": true,
+          "probability": 0.999795005
+        },
+        "risk_tier": {
+          "value": "high",
+          "probability": 0.633192667
+        },
+        "charge_scope": {
+          "value": "not_ours",
+          "probability": 0.931413689
+        },
+        "actions": {
+          "value": [
+            "contact_cardholder",
+            "close_session"
+          ],
+          "probability": 0.989656913
+        }
+      },
+      "telemetry": {
+        "backend": "llamacpp",
+        "device": "gpu",
+        "n_gpu_layers": -1,
+        "shared_prefix": false,
+        "prompt_tokens": 263,
+        "n_ctx": 4096,
+        "n_ctx_seq": 4096,
+        "n_batch": 512,
+        "architecture": "qwen2",
+        "parameters": 7615616512,
+        "description": "qwen2 7B Q4_K - Medium",
+        "llama_cpp_python": "0.4.2+cu124",
+        "prefill_calls": 1,
+        "prefill_decode_calls": 1,
+        "decode_calls": 3,
+        "sequence_copies": 8,
+        "parallel_decode_calls": 2,
+        "max_parallel_rows": 5
+      }
+    }
+  ]
+}

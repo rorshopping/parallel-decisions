@@ -194,6 +194,7 @@ class Decider:
                  n_ctx: int | None = None,
                  n_batch: int | None = None,
                  n_threads: int | None = None,
+                 n_gpu_layers: int | None = None,
                  verbose: bool = False):
         cfg = config if isinstance(config, Config) else load_config(config)
         self.config = cfg
@@ -234,13 +235,21 @@ class Decider:
         self.n_ctx = n_ctx if n_ctx is not None else cfg.n_ctx
         self.n_batch = n_batch if n_batch is not None else cfg.n_batch
         self.n_threads = n_threads if n_threads is not None else cfg.n_threads
+        if n_gpu_layers is None:
+            n_gpu_layers = getattr(cfg, "n_gpu_layers", None)
+        self.n_gpu_layers = n_gpu_layers
         if self.backend == "llamacpp":
             from .engine_llamacpp import _positive_int
             if not model_id:
                 raise ValueError("llamacpp requires an explicit local GGUF model_id")
             if (self.cuda_graph or torch_dtype or torch_device or torch_prefill_chunk
                     or memory_budget_gb is not None):
-                raise ValueError("llamacpp supports CPU only; cuda_graph, Torch settings and memory_budget_gb are unsupported")
+                raise ValueError("llamacpp does not support cuda_graph, Torch settings or memory_budget_gb")
+            if self.n_gpu_layers is not None and (
+                    isinstance(self.n_gpu_layers, bool)
+                    or not isinstance(self.n_gpu_layers, int)):
+                raise ValueError("n_gpu_layers must be an int (default None/0 keeps the CPU "
+                                 "contract; -1 opts into GPU offload)")
             for name, value in (("max_fields_per_batch", max_fields_per_batch),
                                 ("max_collision_rows", max_collision_rows),
                                 ("n_ctx", self.n_ctx), ("n_batch", self.n_batch),
@@ -353,16 +362,19 @@ class Decider:
                 self.model_id, n_ctx=self.n_ctx if self.n_ctx is not None else 4096,
                 n_batch=self.n_batch if self.n_batch is not None else 512,
                 n_threads=self.n_threads,
+                n_gpu_layers=self.n_gpu_layers,
                 max_rows=max(self.max_fields_per_batch, self.max_collision_rows),
                 verbose=self.verbose)
             t0 = time.perf_counter()
             rt.load()
             self._llamacpp_rt = rt
             self._model, self._tokenizer = rt.model, rt.tokenizer
-            self.log_event("load", backend="llamacpp", device="cpu",
+            self.log_event("load", backend="llamacpp",
+                           device="gpu" if rt.n_gpu_layers else "cpu",
                            seconds=round(time.perf_counter() - t0, 3), **rt.metadata)
-            # Native CPU has no shader warmup. Do not perform an unreported
-            # extra request when warmup=True (the facade's historical default).
+            # The facade's warmup exists for shader compilation on backends
+            # that need it; a first real request covers the same warmup on
+            # CUDA/CPU, so keep skipping an unreported extra request.
             return
         if self.backend == "torch":
             self._load_torch()
